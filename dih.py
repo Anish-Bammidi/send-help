@@ -9,14 +9,14 @@ import traceback
 GEMINI_API_KEY = "AIzaSyAdOsM8ZyjaclxIzy29AdPLLop-NOH4GLw"
 try:
     genai.configure(api_key=GEMINI_API_KEY)
+    st.write("**Debug**: Gemini API configured successfully.")
 except Exception as e:
-    st.error(f"Failed to configure Gemini API: {str(e)}")
+    st.error(f"**Debug**: Failed to configure Gemini API: {str(e)}")
 
 # Initialize Firebase Admin SDK
 @st.cache_resource
 def initialize_firebase():
     try:
-        # Service account credentials embedded directly
         firebase_config = {
             "type": "service_account",
             "project_id": "restaurant-data-backend",
@@ -31,16 +31,12 @@ def initialize_firebase():
             "universe_domain": "googleapis.com"
         }
         cred = credentials.Certificate(firebase_config)
-        
-        # Initialize Firebase only if not already initialized
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
+        st.write("**Debug**: Firebase initialized successfully.")
         return firestore.client()
-    except ValueError as e:
-        st.error(f"Failed to initialize Firebase: {str(e)}. Please check the embedded service account credentials.")
-        return None
     except Exception as e:
-        st.error(f"An unexpected error occurred while initializing Firebase: {str(e)}")
+        st.error(f"**Debug**: Failed to initialize Firebase: {str(e)}")
         return None
 
 # Function to fetch ingredient inventory
@@ -134,54 +130,53 @@ def delete_menu_item(db, dish_id):
         st.error(f"Error deleting menu item: {str(e)}")
         return False
 
-# Chatbot Anna using Gemini API
+# Simplified Chatbot Anna
 def chatbot_anna(db, user_input):
+    st.write("**Debug**: Entering chatbot_anna function.")
     if not user_input:
+        st.write("**Debug**: Empty user input.")
         return "Please enter a question for Anna."
+    
     try:
-        # Fetch inventory and menu for context
+        st.write("**Debug**: Fetching inventory and menu.")
         ingredients = get_ingredient_inventory(db)
         menu_items = get_menu_items(db)
         
-        # Prepare context
-        ingredient_names = [item["ingredient_name"] for item in ingredients]
-        ingredient_details = "\n".join([f"- {item['ingredient_name']}: {item['Quantity']}, Expiry: {item['Expiry']}, Type: {item['Type']}" for item in ingredients])
-        menu_details = "\n".join([f"- {item['name']}: {item['description']}, Category: {item['category']}, Ingredients: {', '.join(item['ingredients'])}, Tags: {', '.join(item['tags'])}" for item in menu_items])
+        ingredient_details = "\n".join([f"- {item['ingredient_name']}: {item['Quantity']}" for item in ingredients]) if ingredients else "No ingredients."
+        menu_details = "\n".join([f"- {item['name']}: {', '.join(item['ingredients'])}" for item in menu_items]) if menu_items else "No menu items."
         
-        # Construct prompt
         prompt = (
-            f"You are Anna, a helpful restaurant event-planning assistant. Use the following data to answer the user's question:\n"
-            f"**Inventory**:\n{ingredient_details if ingredients else 'No ingredients available.'}\n"
-            f"**Menu**:\n{menu_details if menu_items else 'No menu items available.'}\n"
-            f"User question: {user_input}\n"
-            "Provide a concise and helpful response. For recipe suggestions, use available ingredients. For menu questions, reference menu items and their tags."
+            f"You are Anna, a restaurant assistant. Use this data:\n"
+            f"Inventory:\n{ingredient_details}\n"
+            f"Menu:\n{menu_details}\n"
+            f"Question: {user_input}\n"
+            "Answer concisely."
         )
         
-        # Debug: Show prompt
-        st.write("**Debug**: Sending prompt to Gemini API...")
-        # st.write(f"Prompt: {prompt[:500]}...")  # Truncated for brevity
-        
-        # Initialize model and generate response
+        st.write("**Debug**: Prompt prepared, initializing model.")
         model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        st.write("**Debug**: Sending prompt to Gemini API.")
         response = model.generate_content(prompt)
         
         if not response.text:
-            return "Anna received an empty response from the Gemini API. Please try a different prompt."
+            st.write("**Debug**: Empty response from Gemini API.")
+            return "Anna received an empty response. Please try again."
+        
+        st.write("**Debug**: Response received successfully.")
         return response.text
     except Exception as e:
-        error_msg = f"Anna encountered an error: {str(e)}\n\n**Traceback**:\n{traceback.format_exc()}"
+        error_msg = f"**Debug**: Error in chatbot_anna: {str(e)}\n**Traceback**:\n{traceback.format_exc()}"
         st.error(error_msg)
-        return f"Sorry, Anna couldn't respond due to an error: {str(e)}. Please check the API key or try again later."
+        return f"Anna failed to respond: {str(e)}"
 
 # Initialize Streamlit app
 st.title("Restaurant Event Planning System")
 
 # Initialize Firebase
 db = initialize_firebase()
-
-# Check if Firebase initialization failed
 if db is None:
-    st.error("Cannot connect to Firestore. Please check the error messages above and try again.")
+    st.error("Cannot connect to Firestore. Please check the error messages above.")
     st.stop()
 
 # Sidebar for navigation
@@ -191,8 +186,6 @@ page = st.sidebar.radio("Select a page:", ["Inventory", "Menu", "Chat with Anna"
 # Inventory Page
 if page == "Inventory":
     st.header("Ingredient Inventory")
-    
-    # Add new ingredient
     st.subheader("Add/Update Ingredient")
     with st.form("ingredient_form"):
         ingredient_name = st.text_input("Ingredient Name")
@@ -202,54 +195,34 @@ if page == "Inventory":
         alternatives = st.text_input("Alternatives (comma-separated)")
         submit_button = st.form_submit_button("Add/Update Ingredient")
         
-        if submit_button:
-            if ingredient_name:
-                expiry_str = expiry.strftime("%Y-%m-%d")
-                if upsert_ingredient(db, ingredient_name, quantity, expiry_str, ingredient_type, alternatives):
-                    st.success(f"Ingredient '{ingredient_name}' added/updated successfully!")
-                    st.experimental_rerun()
-                else:
-                    st.error("Failed to add/update ingredient.")
+        if submit_button and ingredient_name:
+            expiry_str = expiry.strftime("%Y-%m-%d")
+            if upsert_ingredient(db, ingredient_name, quantity, expiry_str, ingredient_type, alternatives):
+                st.success(f"Ingredient '{ingredient_name}' added/updated!")
+                st.experimental_rerun()
             else:
-                st.error("Ingredient name is required.")
-    
-    # Fetch and display inventory
-    inventory = get_ingredient_inventory(db)
-    
-    # Filter options
+                st.error("Failed to add/update ingredient.")
+        
     st.subheader("View Ingredients")
     type_filter = st.selectbox("Filter by Type", ["All", "vegetarian", "vegan", "mixed"])
-    expiry_filter = st.date_input("Show ingredients expiring before", value=None, min_value=datetime(2025, 1, 1))
-    
-    # Display inventory
+    inventory = get_ingredient_inventory(db)
     if not inventory:
-        st.write("No inventory items found or failed to connect to Firestore.")
+        st.write("No inventory items found.")
     for item in inventory:
         if type_filter != "All" and item["Type"] != type_filter:
             continue
-        if expiry_filter and item["Expiry"] and datetime.strptime(item["Expiry"], "%Y-%m-%d").date() > expiry_filter:
-            continue
-        st.write(f"**{item['ingredient_name']}**")
-        st.write(f"Quantity: {item['Quantity']}")
-        st.write(f"Expiry: {item['Expiry']}")
-        st.write(f"Type: {item['Type']}")
-        st.write(f"Alternatives: {item['Alternatives']}")
+        st.write(f"**{item['ingredient_name']}**: {item['Quantity']}, Expiry: {item['Expiry']}, Type: {item['Type']}")
         if st.button(f"Delete {item['ingredient_name']}", key=f"delete_ingredient_{item['ingredient_name']}"):
             if delete_ingredient(db, item["ingredient_name"]):
-                st.success(f"Ingredient '{item['ingredient_name']}' deleted successfully!")
+                st.success(f"Ingredient '{item['ingredient_name']}' deleted!")
                 st.experimental_rerun()
-            else:
-                st.error(f"Failed to delete ingredient '{item['ingredient_name']}'.")
-        st.write("---")
 
 # Menu Page
 elif page == "Menu":
     st.header("Menu Items")
-    
-    # Add new menu item
     st.subheader("Add/Update Menu Item")
     with st.form("menu_form"):
-        dish_id = st.text_input("Dish ID (unique identifier)")
+        dish_id = st.text_input("Dish ID")
         name = st.text_input("Dish Name")
         description = st.text_area("Description")
         category = st.selectbox("Category", ["Starter", "Main", "Dessert"])
@@ -257,70 +230,48 @@ elif page == "Menu":
         tags = st.multiselect("Dietary Tags", ["vegetarian", "gluten-free", "vegan", "nut-free"])
         submit_button = st.form_submit_button("Add/Update Menu Item")
         
-        if submit_button:
-            if dish_id and name:
-                ingredients_list = [i.strip() for i in ingredients.split(",") if i.strip()]
-                if upsert_menu_item(db, dish_id, name, description, category, ingredients_list, tags):
-                    st.success(f"Menu item '{name}' added/updated successfully!")
-                    st.experimental_rerun()
-                else:
-                    st.error("Failed to add/update menu item.")
+        if submit_button and dish_id and name:
+            ingredients_list = [i.strip() for i in ingredients.split(",") if i.strip()]
+            if upsert_menu_item(db, dish_id, name, description, category, ingredients_list, tags):
+                st.success(f"Menu item '{name}' added/updated!")
+                st.experimental_rerun()
             else:
-                st.error("Dish ID and name are required.")
-    
-    # Fetch and display menu items
-    menu_items = get_menu_items(db)
-    
-    # Filter options
+                st.error("Failed to add/update menu item.")
+        
     st.subheader("View Dishes")
     category_filter = st.selectbox("Filter by Category", ["All", "Starter", "Main", "Dessert"])
-    tag_filter = st.multiselect("Filter by Dietary Tags", ["vegetarian", "gluten-free", "vegan", "nut-free"])
-    
-    # Display menu items
+    menu_items = get_menu_items(db)
     if not menu_items:
-        st.write("No menu items found or failed to connect to Firestore.")
+        st.write("No menu items found.")
     for item in menu_items:
         if category_filter != "All" and item["category"] != category_filter:
             continue
-        if tag_filter and not all(tag in item["tags"] for tag in tag_filter):
-            continue
-        st.write(f"**{item['name']}**")
-        st.write(f"Description: {item['description']}")
-        st.write(f"Category: {item['category']}")
-        st.write(f"Ingredients: {', '.join(item['ingredients'])}")
-        st.write(f"Tags: {', '.join(item['tags'])}")
+        st.write(f"**{item['name']}**: {item['description']}, Ingredients: {', '.join(item['ingredients'])}")
         if st.button(f"Delete {item['name']}", key=f"delete_menu_{item['id']}"):
             if delete_menu_item(db, item["id"]):
-                st.success(f"Menu item '{item['name']}' deleted successfully!")
+                st.success(f"Menu item '{item['name']}' deleted!")
                 st.experimental_rerun()
-            else:
-                st.error(f"Failed to delete menu item '{item['name']}'.")
-        st.write("---")
 
 # Chatbot Anna Page
 elif page == "Chat with Anna":
     st.header("Chat with Anna")
-    st.write("Ask Anna for recipe suggestions, menu information, or event planning tips!")
+    st.write("Ask Anna about recipes, menu, or event planning!")
     
-    # Initialize chat history in session state
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
     
-    # Display chat history
     for message in st.session_state.chat_history:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # User input
     user_input = st.chat_input("Your question for Anna:")
     if user_input:
-        # Add user message to chat history
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
         
-        # Get Anna's response
         with st.chat_message("assistant"):
+            st.write("**Debug**: Processing your question...")
             response = chatbot_anna(db, user_input)
             st.markdown(response)
             st.session_state.chat_history.append({"role": "assistant", "content": response})
