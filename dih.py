@@ -1,35 +1,37 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-import json
-import os
 from datetime import datetime
+import os
 
 # Initialize Firebase Admin SDK
 @st.cache_resource
 def initialize_firebase():
-    # Firebase configuration
-    firebase_config = {
-        "type": "service_account",
-        "project_id": "restaurant-data-backend",
-        "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID", "mock_key_id"),
-        "private_key": os.environ.get("FIREBASE_PRIVATE_KEY", "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"),
-        "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL", "mock@restaurant-data-backend.iam.gserviceaccount.com"),
-        "client_id": os.environ.get("FIREBASE_CLIENT_ID", "mock_client_id"),
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-        "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_X509_CERT_URL", "mock_cert_url")
-    }
+    # Path to the Firebase service account JSON file
+    service_account_path = "/mount/src/send-help/restaurant-data-backend-firebase-adminsdk.json"
     
-    # Initialize Firebase only if not already initialized
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(firebase_config)
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+    try:
+        # Check if file exists
+        if not os.path.exists(service_account_path):
+            st.error(f"Service account file not found at: {service_account_path}. Please ensure the Firebase service account JSON file is correctly placed.")
+            return None
+        
+        # Initialize Firebase only if not already initialized
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(service_account_path)
+            firebase_admin.initialize_app(cred)
+        return firestore.client()
+    except ValueError as e:
+        st.error(f"Failed to initialize Firebase: {str(e)}. Please check the service account JSON file.")
+        return None
+    except Exception as e:
+        st.error(f"An unexpected error occurred while initializing Firebase: {str(e)}")
+        return None
 
 # Function to fetch ingredient inventory
 def get_ingredient_inventory(db):
+    if db is None:
+        return []
     inventory_ref = db.collection("ingredient_inventory")
     docs = inventory_ref.stream()
     inventory = []
@@ -41,6 +43,8 @@ def get_ingredient_inventory(db):
 
 # Function to fetch menu items
 def get_menu_items(db):
+    if db is None:
+        return []
     menu_ref = db.collection("menu")
     docs = menu_ref.stream()
     menu_items = []
@@ -55,6 +59,11 @@ st.title("Restaurant Event Planning System")
 
 # Initialize Firebase
 db = initialize_firebase()
+
+# Check if Firebase initialization failed
+if db is None:
+    st.error("Cannot connect to Firestore. Please check the error messages above and try again.")
+    st.stop()
 
 # Sidebar for navigation
 st.sidebar.header("Navigation")
@@ -73,6 +82,8 @@ if page == "Inventory":
     
     # Display inventory
     st.subheader("Ingredients")
+    if not inventory:
+        st.write("No inventory items found or failed to connect to Firestore.")
     for item in inventory:
         if type_filter != "All" and item["Type"] != type_filter:
             continue
@@ -98,6 +109,8 @@ elif page == "Menu":
     
     # Display menu items
     st.subheader("Dishes")
+    if not menu_items:
+        st.write("No menu items found or failed to connect to Firestore.")
     for item in menu_items:
         if category_filter != "All" and item["category"] != category_filter:
             continue
