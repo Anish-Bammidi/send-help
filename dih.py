@@ -3,10 +3,14 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 import google.generativeai as genai
+import traceback
 
 # Configure Gemini API
 GEMINI_API_KEY = "AIzaSyAdOsM8ZyjaclxIzy29AdPLLop-NOH4GLw"
-genai.configure(api_key=GEMINI_API_KEY)
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+except Exception as e:
+    st.error(f"Failed to configure Gemini API: {str(e)}")
 
 # Initialize Firebase Admin SDK
 @st.cache_resource
@@ -132,6 +136,8 @@ def delete_menu_item(db, dish_id):
 
 # Chatbot Anna using Gemini API
 def chatbot_anna(db, user_input):
+    if not user_input:
+        return "Please enter a question for Anna."
     try:
         # Fetch inventory and menu for context
         ingredients = get_ingredient_inventory(db)
@@ -151,11 +157,21 @@ def chatbot_anna(db, user_input):
             "Provide a concise and helpful response. For recipe suggestions, use available ingredients. For menu questions, reference menu items and their tags."
         )
         
-        model = genai.GenerativeModel("gemini-1.5-pro")
+        # Debug: Show prompt
+        st.write("**Debug**: Sending prompt to Gemini API...")
+        # st.write(f"Prompt: {prompt[:500]}...")  # Truncated for brevity
+        
+        # Initialize model and generate response
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt)
+        
+        if not response.text:
+            return "Anna received an empty response from the Gemini API. Please try a different prompt."
         return response.text
     except Exception as e:
-        return f"Anna encountered an error: {str(e)}"
+        error_msg = f"Anna encountered an error: {str(e)}\n\n**Traceback**:\n{traceback.format_exc()}"
+        st.error(error_msg)
+        return f"Sorry, Anna couldn't respond due to an error: {str(e)}. Please check the API key or try again later."
 
 # Initialize Streamlit app
 st.title("Restaurant Event Planning System")
