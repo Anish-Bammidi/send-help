@@ -6,10 +6,13 @@ import os
 
 # Initialize Firebase Admin SDK
 @st.cache_resource
-def initialize_firebase(service_account_path=None):
+def initialize_firebase():
     try:
-        # Use service account JSON file if provided and exists
-        if service_account_path and os.path.exists(service_account_path):
+        # Default path for service account JSON file
+        service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT_PATH", "/mount/src/send-help/restaurant-data-backend-firebase-adminsdk.json")
+        
+        # Try loading from service account JSON file
+        if os.path.exists(service_account_path):
             cred = credentials.Certificate(service_account_path)
         else:
             # Fallback to environment variables
@@ -27,7 +30,7 @@ def initialize_firebase(service_account_path=None):
             }
             if not all([firebase_config["private_key_id"], firebase_config["private_key"], firebase_config["client_email"]]):
                 st.error(
-                    f"Service account file not found at: {service_account_path or 'No path provided'}. "
+                    f"Service account file not found at: {service_account_path}. "
                     "Environment variables (FIREBASE_PRIVATE_KEY_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL) are also missing or incomplete. "
                     "Please provide a valid service account JSON file or set the environment variables."
                 )
@@ -139,16 +142,8 @@ def delete_menu_item(db, dish_id):
 # Initialize Streamlit app
 st.title("Restaurant Event Planning System")
 
-# Get Firebase service account path from user
-default_path = "/mount/src/send-help/restaurant-data-backend-firebase-adminsdk.json"
-service_account_path = st.text_input(
-    "Firebase Service Account JSON Path",
-    value=default_path,
-    help="Enter the path to your Firebase service account JSON file, or leave blank to use environment variables (FIREBASE_PRIVATE_KEY_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL)."
-)
-
-# Initialize Firebase with the provided path
-db = initialize_firebase(service_account_path)
+# Initialize Firebase
+db = initialize_firebase()
 
 # Check if Firebase initialization failed
 if db is None:
