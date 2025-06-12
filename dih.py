@@ -1,4 +1,13 @@
+# Streamlit App Configuration - MUST BE FIRST!
 import streamlit as st
+
+st.set_page_config(
+    page_title="EventBot - Restaurant Event Planning",
+    page_icon="🍽️",
+    layout="wide"
+)
+
+# Now import everything else
 import pandas as pd
 import json
 from datetime import datetime, date
@@ -207,13 +216,6 @@ def create_sample_data():
     }
     
     return sample_ingredients, sample_menu
-
-# Streamlit App Configuration
-st.set_page_config(
-    page_title="EventBot - Restaurant Event Planning",
-    page_icon="🍽️",
-    layout="wide"
-)
 
 # App Header
 st.title("🍽️ EventBot - Restaurant Event Planning System")
