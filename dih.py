@@ -3,101 +3,72 @@ import pandas as pd
 import json
 from datetime import datetime, date
 import requests
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-# Firebase configuration
-firebase_config = {
-    "apiKey": "AIzaSyAdOsM8ZyjaclxIzy29AdPLLop-NOH4GLw",
-    "authDomain": "restaurant-data-backend.firebaseapp.com",
-    "projectId": "restaurant-data-backend",
-    "storageBucket": "restaurant-data-backend.firebasestorage.app",
-    "messagingSenderId": "1080257817525",
-    "appId": "1:1080257817525:web:0b1a9cdb5b8d5abe8d07fc",
-    "measurementId": "G-2K3GHNE916"
+# Firebase Admin SDK Service Account Key
+SERVICE_ACCOUNT_KEY = {
+    "type": "service_account",
+    "project_id": "restaurant-data-backend",
+    "private_key_id": "fdf27bcbb8e2ab65fe5ed4f812478f550ca7a40a",
+    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDNYUFVRchSeS65\nwp7vh62xYdX7SZuDplUWZtEyywB8i/lSB5btHMrVkW5d/810qVrxBY7fkqYlqvRH\nRqXOtwOPG72vZbO5q3TH9GI8uhaMoW92tpTIc0umlzG0Z8Uf1djkSBfydwsSUuye\nt9P6MYi+iz1zI6nalSdxSgenRir/jLMDtP3+FDksLOaHja9g2eWT8YfnnP/mdb5J\nI20dLtvuPwyE9dOMMVAI7/FJ0nVF3dnWmKIwf9kMWdX/vQPEdNzfZTzFsy0+335H\nw6SbNhpVWrZcxMIb7E7MUp26VJw0MofiIuPlZwA+9ICQajTUnyriyBv0heYjlr/k\noeRl4g+lAgMBAAECggEAJlAlCbUPonEIWi94Ckunh55udmb8G6JRH7F1B7JuiA1t\nqJORYHDdVtt/OQpiB8gbFrjYdxUqqP67/LrtbgNeptkAOQLyNOoLCk0o8Vauo7Pu\n8PitBzrY6z4rz9GG6MIyKJ3ZV8pE1rmA+jflU7hfX9pmT38g7c2i0sPCaz5QAaVm\nLoKtRbdCgsnfbCvic+nd7m4x1sFxljUG9bjag3821qWbv8YHz1IqVhKma4y7DRbv\nStxGiV+XH8K9AD8f9caQFsBfPEvovPiZhsBqbF7DM/psQ8QkTgICrs6zb6pOZyUi\ndpbq5oal0ynVZpYXkC/2LPnpETP+3qcPRaz4DXuluQKBgQD2e8aC9Q8JTVmJ7RdE\nXP8KBForSDA3tZ0fLGxTJH286bhzUVlsUg9AFaGpgzOS3BGfzk4wfZ/g58/9kbyt\niGH/yi0RMyrrO9wwY4UoRaNC2AkgtZt1JhOPIChrMGW2dIsVq+I8VPkbqUtgl+bd\n5MrN0Qz7MgoGEbOWsfAoMR8uGQKBgQDVTzcDmAZ5qkUoY9idtABCOdDIUgbmPFbr\nWOuCAxVh7AhzfgC44igZm+T97x/xP1Pj7w6wwTCF9T/rKQo7TFaAMGeih+hfz6GI\ncPf2m/UhO6vGqF9etA8VHp3p+eAc4L4obAcHjTbMmOR4l99hgWD9giHFpQwH94FS\nt0hmYbbHbQKBgGl95iNMYOgZS9YlPA0NRDZ0UGcv2TsuppWd/KrE9m+xFDl+uqgK\nou5Jk8wqFBupxn0/3eURDylB7ZnYEwmuUksYq5st7BOLphyrq2TmEQ7dyWJPd752\n0m4yVDo0F4Q0cwaObyBlOcyl81XfDXcwob/e1hB4hSO91cAMXf3FsFOZAoGAI9x/\neUEzxXyUx+eRYWIDsR6bNTJlKov2aPa4EVGHZMET4qbKZErRRwzogLCVBDALYISu\nSZURHVRP/K8Xo0SAPmjk43RJ4uG7XH7xkSpDGeU4SdvAvOE0r+5HyjBSN0ipb45J\n2EErd1Y1Avk1euUPc09PcjT/Qs+flFJv/5Zp7jkCgYEAhtTs0gnnRv694Doss/KB\nxgECRq+Z/rfeYnLTFCy/5JTequs1C8rJFEkJMGXMhQz1oVgLRuMz3g8ZVuUsFi4R\nj0cZkXVAmDUKdu4AUrGi9odPewndE922bx/74FU3RXXoWhtQf7biRtAinm7NjD12\nPph4hjoK6uO6dAMDIZ3RsGY=\n-----END PRIVATE KEY-----\n",
+    "client_email": "firebase-adminsdk-fbsvc@restaurant-data-backend.iam.gserviceaccount.com",
+    "client_id": "115855681795792637429",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40restaurant-data-backend.iam.gserviceaccount.com",
+    "universe_domain": "googleapis.com"
 }
 
-# GEMINI AI API KEY (YOUR KEY!)
+# GEMINI AI API KEY
 GEMINI_API_KEY = "AIzaSyAdOsM8ZyjaclxIzy29AdPLLop-NOH4GLw"
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
-# Firebase REST API base URL
-FIREBASE_URL = f"https://firestore.googleapis.com/v1/projects/{firebase_config['projectId']}/databases/(default)/documents"
-
-# Helper Functions for Firebase REST API
-def get_collection(collection_name):
-    """Fetch all documents from a collection using Firebase REST API"""
+# Initialize Firebase Admin SDK
+@st.cache_resource
+def initialize_firebase():
+    """Initialize Firebase Admin SDK with service account credentials"""
     try:
-        response = requests.get(f"{FIREBASE_URL}/{collection_name}")
-        if response.status_code == 200:
-            data = response.json()
-            documents = {}
-            
-            if 'documents' in data:
-                for doc in data['documents']:
-                    doc_id = doc['name'].split('/')[-1]
-                    doc_data = {}
-                    
-                    if 'fields' in doc:
-                        for field_name, field_value in doc['fields'].items():
-                            # Extract the value based on its type
-                            value_type = list(field_value.keys())[0]
-                            
-                            if value_type == 'stringValue':
-                                doc_data[field_name] = field_value['stringValue']
-                            elif value_type == 'arrayValue':
-                                if 'values' in field_value['arrayValue']:
-                                    doc_data[field_name] = [v['stringValue'] for v in field_value['arrayValue']['values']]
-                                else:
-                                    doc_data[field_name] = []
-                            elif value_type == 'integerValue':
-                                doc_data[field_name] = int(field_value['integerValue'])
-                            elif value_type == 'doubleValue':
-                                doc_data[field_name] = float(field_value['doubleValue'])
-                            elif value_type == 'booleanValue':
-                                doc_data[field_name] = field_value['booleanValue']
-                    
-                    documents[doc_id] = doc_data
-            
-            return documents
-        else:
-            return {}
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(SERVICE_ACCOUNT_KEY)
+            firebase_admin.initialize_app(cred)
+        return firestore.client()
     except Exception as e:
-        st.error(f"Firebase Error: {e}")
+        st.error(f"Firebase initialization error: {e}")
+        return None
+
+# Get Firestore client
+db = initialize_firebase()
+
+# Firebase Helper Functions (Using Admin SDK)
+def get_collection(collection_name):
+    """Fetch all documents from a collection using Firebase Admin SDK"""
+    try:
+        if not db:
+            return {}
+        
+        docs = db.collection(collection_name).stream()
+        documents = {}
+        
+        for doc in docs:
+            documents[doc.id] = doc.to_dict()
+        
+        return documents
+    except Exception as e:
+        st.error(f"Error fetching {collection_name}: {e}")
         return {}
 
 def add_document(collection_name, doc_id, data):
-    """Add a document to a collection using Firebase REST API"""
+    """Add a document to a collection using Firebase Admin SDK"""
     try:
-        # Convert Python data to Firestore format
-        firestore_data = {"fields": {}}
-        
-        for key, value in data.items():
-            if isinstance(value, str):
-                firestore_data["fields"][key] = {"stringValue": value}
-            elif isinstance(value, list):
-                firestore_data["fields"][key] = {
-                    "arrayValue": {
-                        "values": [{"stringValue": item} for item in value]
-                    }
-                }
-            elif isinstance(value, int):
-                firestore_data["fields"][key] = {"integerValue": str(value)}
-            elif isinstance(value, float):
-                firestore_data["fields"][key] = {"doubleValue": value}
-            elif isinstance(value, bool):
-                firestore_data["fields"][key] = {"booleanValue": value}
-        
-        # Use PUT to set document with custom ID
-        response = requests.put(
-            f"{FIREBASE_URL}/{collection_name}/{doc_id}",
-            json=firestore_data
-        )
-        
-        if response.status_code in [200, 201]:
-            return True
-        else:
+        if not db:
             return False
+        
+        db.collection(collection_name).document(doc_id).set(data)
+        return True
     except Exception as e:
-        st.error(f"Error adding document: {e}")
+        st.error(f"Error adding document to {collection_name}: {e}")
         return False
 
 def call_gemini_ai_direct(user_message, ingredients_data, menu_data):
@@ -178,12 +149,14 @@ INGREDIENTS ({len(ingredients_data)} items):
             else:
                 return "I'm sorry, I couldn't generate a response right now. Please try asking your question differently! 🤖"
         else:
-            return f"I'm experiencing technical difficulties. Error: {response.status_code}"
+            return f"❌ API Error {response.status_code}: {response.text}"
             
     except requests.exceptions.Timeout:
-        return "I'm taking longer than usual to think! ⏰ Please try your question again."
+        return "⏰ Request timed out. Please try again."
+    except requests.exceptions.ConnectionError:
+        return "🌐 Connection error. Please check your internet connection."
     except Exception as e:
-        return f"I encountered an error: {str(e)}. Please try again!"
+        return f"🚨 Unexpected error: {str(e)}"
 
 def create_sample_data():
     """Create sample data for testing"""
@@ -246,6 +219,12 @@ st.set_page_config(
 st.title("🍽️ EventBot - Restaurant Event Planning System")
 st.markdown("---")
 
+# Firebase Connection Status
+if db:
+    st.sidebar.success("🔥 Firebase Admin SDK Connected!")
+else:
+    st.sidebar.error("❌ Firebase Connection Failed")
+
 # Sidebar Navigation
 st.sidebar.title("Navigation")
 page = st.sidebar.selectbox(
@@ -294,14 +273,17 @@ if page == "Dashboard":
             sample_ingredients, sample_menu = create_sample_data()
             
             # Add sample ingredients
+            success_count = 0
             for name, data in sample_ingredients.items():
-                add_ingredient(name, data['Quantity'], data['Expiry'], data['Type'], data['Alternatives'])
+                if add_ingredient(name, data['Quantity'], data['Expiry'], data['Type'], data['Alternatives']):
+                    success_count += 1
             
             # Add sample menu items
             for item_id, data in sample_menu.items():
-                add_menu_item(item_id, data['name'], data['description'], data['category'], data['ingredients'], data['tags'])
+                if add_menu_item(item_id, data['name'], data['description'], data['category'], data['ingredients'], data['tags']):
+                    success_count += 1
             
-            st.success("✅ Sample data added! Refresh the page to see the data.")
+            st.success(f"✅ Added {success_count} items! Refresh the page to see the data.")
             st.rerun()
     
     col1, col2 = st.columns(2)
@@ -374,7 +356,7 @@ if page == "Dashboard":
 # EventBot AI Chat Page - PURE GEMINI AI, NO RULES!
 elif page == "EventBot AI Chat":
     st.header("🤖 EventBot AI Assistant")
-    st.write("**100% Pure Gemini AI** 🧠✨ - Ask me ANYTHING!")
+    st.write("**100% Pure Gemini AI + Firebase Admin SDK** 🧠🔥 - Ask me ANYTHING!")
     
     # Load data for chatbot
     ingredients = get_ingredient_inventory()
@@ -387,17 +369,28 @@ elif page == "EventBot AI Chat":
     with col2:
         st.metric("🍽️ Menu Items", len(menu_items))
     with col3:
-        st.metric("🤖 Gemini AI", "✅ Direct")
+        st.metric("🔥 Firebase", "✅ Admin SDK" if db else "❌ Error")
+    
+    # API Test Button
+    if st.button("🔧 Test Gemini AI Connection"):
+        test_response = call_gemini_ai_direct("Hello, are you working?", ingredients, menu_items)
+        st.write("**Test Response:**")
+        st.write(test_response)
     
     # Chat interface
     if "pure_ai_messages" not in st.session_state:
-        # Get initial greeting from Gemini AI
-        initial_prompt = f"""You are EventBot, an AI assistant for a restaurant. The restaurant currently has {len(ingredients)} ingredients and {len(menu_items)} menu items. Introduce yourself in a friendly, engaging way and explain what you can help with. Be conversational and welcoming."""
-        
-        initial_response = call_gemini_ai_direct(initial_prompt, ingredients, menu_items)
-        
         st.session_state.pure_ai_messages = [
-            {"role": "assistant", "content": initial_response}
+            {"role": "assistant", "content": f"""Hello! I'm EventBot, your AI restaurant assistant! 🍽️
+
+**Current Status:**
+• **{len(ingredients)} ingredients** in inventory
+• **{len(menu_items)} menu items** available
+• **Firebase Admin SDK** connected! 🔥
+• **Gemini AI** ready to help! 🧠
+
+I can help you with anything about your restaurant - inventory management, menu planning, event ideas, cooking suggestions, data analysis, and much more!
+
+What would you like to know?"""}
         ]
     
     # Display chat messages
@@ -760,4 +753,4 @@ elif page == "Event Planning":
 
 # Footer
 st.markdown("---")
-st.markdown("*EventBot - 100% Pure Gemini AI Assistant 🧠✨*")
+st.markdown("*EventBot - 100% Pure Gemini AI + Firebase Admin SDK 🧠🔥*")
