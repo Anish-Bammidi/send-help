@@ -3,6 +3,7 @@ import pandas as pd
 import json
 from datetime import datetime, date
 import requests
+import os
 
 # Firebase configuration
 firebase_config = {
@@ -14,10 +15,6 @@ firebase_config = {
     "appId": "1:1080257817525:web:0b1a9cdb5b8d5abe8d07fc",
     "measurementId": "G-2K3GHNE916"
 }
-
-# Google AI API configuration
-GOOGLE_AI_API_KEY = "AIzaSyAdOsM8ZyjaclxIzy29AdPLLop-NOH4GLw"
-GOOGLE_AI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
 # Firebase REST API base URL
 FIREBASE_URL = f"https://firestore.googleapis.com/v1/projects/{firebase_config['projectId']}/databases/(default)/documents"
@@ -100,86 +97,6 @@ def add_document(collection_name, doc_id, data):
         st.error(f"Error adding document: {e}")
         return False
 
-def call_gemini_ai(user_message, ingredients_data, menu_data):
-    """Call Google Gemini AI API with restaurant context"""
-    try:
-        # Prepare context about the restaurant data
-        context = f"""You are EventBot, an AI assistant for a restaurant's event-planning system. You have access to real-time restaurant data.
-
-CURRENT RESTAURANT DATA:
-
-INGREDIENT INVENTORY ({len(ingredients_data)} items):
-"""
-        
-        # Add ingredient details
-        for name, data in ingredients_data.items():
-            context += f"- {name}: {data.get('Quantity', 'Unknown')} (expires: {data.get('Expiry', 'Unknown')}, type: {data.get('Type', 'Unknown')})\n"
-        
-        context += f"\nMENU ITEMS ({len(menu_data)} dishes):\n"
-        
-        # Add menu details
-        for item_id, item in menu_data.items():
-            context += f"- {item.get('name', 'Unnamed')}: {item.get('description', 'No description')} (Category: {item.get('category', 'Unknown')}, Ingredients: {', '.join(item.get('ingredients', []))}, Tags: {', '.join(item.get('tags', []))})\n"
-        
-        context += f"""
-
-INSTRUCTIONS:
-- Answer questions about inventory, menu items, event planning, and cooking suggestions
-- Use the actual data provided above in your responses
-- Be helpful, specific, and reference real ingredients/dishes when relevant
-- If asked about expiry dates, check the dates against today's date
-- For event planning, suggest appropriate menu items from the available dishes
-- If asked what can be made, check which menu items have all required ingredients available
-
-USER QUESTION: {user_message}
-
-Please provide a helpful response based on the restaurant data above."""
-
-        # Prepare the API request
-        payload = {
-            "contents": [{
-                "parts": [{
-                    "text": context
-                }]
-            }],
-            "generationConfig": {
-                "temperature": 0.7,
-                "topK": 40,
-                "topP": 0.95,
-                "maxOutputTokens": 1024,
-            }
-        }
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        # Make the API call
-        response = requests.post(
-            f"{GOOGLE_AI_URL}?key={GOOGLE_AI_API_KEY}",
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if 'candidates' in result and len(result['candidates']) > 0:
-                ai_response = result['candidates'][0]['content']['parts'][0]['text']
-                return ai_response
-            else:
-                return "I'm sorry, I couldn't generate a response. Please try asking your question differently."
-        else:
-            error_detail = response.text if response.text else f"Status code: {response.status_code}"
-            return f"I'm experiencing technical difficulties connecting to my AI service. Error: {error_detail}"
-            
-    except requests.exceptions.Timeout:
-        return "I'm taking longer than usual to respond. Please try your question again."
-    except requests.exceptions.RequestException as e:
-        return f"I'm having trouble connecting to my AI service. Please check your internet connection and try again."
-    except Exception as e:
-        return f"I encountered an unexpected error: {str(e)}. Please try again."
-
 def create_sample_data():
     """Create sample data for testing"""
     # Sample ingredients
@@ -245,7 +162,7 @@ st.markdown("---")
 st.sidebar.title("Navigation")
 page = st.sidebar.selectbox(
     "Choose a section:",
-    ["Dashboard", "Ingredient Inventory", "Menu Management", "Event Planning", "EventBot AI Chat"]
+    ["Dashboard", "Ingredient Inventory", "Menu Management", "Event Planning", "EventBot Chat"]
 )
 
 # Helper Functions
@@ -366,124 +283,194 @@ if page == "Dashboard":
         else:
             st.info("No menu items found. Click 'Add Sample Data' to get started!")
 
-# EventBot AI Chat Page
-elif page == "EventBot AI Chat":
+# EventBot Chat Page
+elif page == "EventBot Chat":
     st.header("🤖 EventBot AI Assistant")
-    st.write("Powered by Google Gemini AI - Ask me anything about your restaurant!")
     
     # Load data for chatbot
     ingredients = get_ingredient_inventory()
     menu_items = get_menu_items()
     
     # Show data status
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
-        st.metric("🥕 Ingredients", len(ingredients))
+        st.metric("Ingredients Available", len(ingredients))
     with col2:
-        st.metric("🍽️ Menu Items", len(menu_items))
-    with col3:
-        st.metric("🤖 AI Status", "✅ Connected")
+        st.metric("Menu Items Available", len(menu_items))
+    
+    # OpenAI API key input
+    with st.sidebar:
+        st.subheader("🔑 OpenAI API Key")
+        api_key = st.text_input("Enter your OpenAI API key", type="password")
+        st.caption("Your API key is not stored and is only used for this session")
+        
+        if not api_key:
+            st.info("👆 Enter your OpenAI API key to enable AI chat")
+            
+        st.divider()
+        st.subheader("🧠 AI Settings")
+        temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.7, step=0.1)
+        st.caption("Higher = more creative, Lower = more precise")
+    
+    # Function to call OpenAI API
+    def call_openai_api(prompt, api_key, temperature=0.7):
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature
+        }
+        
+        try:
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                return response.json()["choices"][0]["message"]["content"]
+            else:
+                return f"Error: {response.status_code} - {response.text}"
+        except Exception as e:
+            return f"Error: {str(e)}"
     
     # Chat interface
-    if "ai_messages" not in st.session_state:
-        st.session_state.ai_messages = [
-            {"role": "assistant", "content": f"""Hello! I'm EventBot, your AI-powered restaurant assistant! 🤖
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant", "content": f"""Hello! I'm EventBot, your restaurant assistant! 🍽️
 
-**I'm connected to your live restaurant data:**
+**Current Database Status:**
 • **{len(ingredients)} ingredients** in inventory
 • **{len(menu_items)} menu items** available
 
-**Powered by Google Gemini AI, I can help you with:**
-• 📦 Smart inventory management and expiry tracking
-• 🍽️ Menu recommendations and dietary options
-• 🎉 Intelligent event planning and menu suggestions
-• 👨‍🍳 Recipe ideas based on available ingredients
-• 📊 Data analysis and insights about your restaurant
+{f"I'm ready to help you with your restaurant data!" if ingredients or menu_items else "⚠️ **No data found!** Please add some ingredients and menu items first, or use the 'Add Sample Data' button on the Dashboard."}
 
-**Try asking me:**
-• "What ingredients are expiring this week?"
-• "Suggest a vegetarian menu for 20 people"
-• "What dishes can I make with tomatoes and cheese?"
-• "Plan a gluten-free event menu"
+**I can help you with:**
+• Inventory management and expiry tracking
+• Menu information and dietary options
+• Event planning and menu suggestions
+• Ingredient availability checks
+• Recipe and cooking assistance
 
 What would you like to know about your restaurant?"""}
         ]
     
     # Display chat messages
-    for message in st.session_state.ai_messages:
+    for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
     # Chat input
-    if prompt := st.chat_input("Ask EventBot anything about your restaurant..."):
+    if prompt := st.chat_input("Ask EventBot a question...", disabled=not api_key):
         # Add user message to chat history
-        st.session_state.ai_messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Generate AI response
+        # Generate response with OpenAI
         with st.chat_message("assistant"):
-            with st.spinner("🤖 EventBot AI is thinking..."):
-                ai_response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.markdown(ai_response)
+            with st.spinner("EventBot is thinking..."):
+                # Prepare context about restaurant data
+                context = "You are EventBot, an AI assistant for a restaurant's event planning system. You have access to the following restaurant data:\n\n"
+                
+                # Add ingredient details
+                context += f"INGREDIENT INVENTORY ({len(ingredients)} items):\n"
+                for name, data in ingredients.items():
+                    context += f"- {name}: {data.get('Quantity', 'Unknown')} (expires: {data.get('Expiry', 'Unknown')}, type: {data.get('Type', 'Unknown')})\n"
+                
+                # Add menu details
+                context += f"\nMENU ITEMS ({len(menu_items)} dishes):\n"
+                for item_id, item in menu_items.items():
+                    context += f"- {item.get('name', 'Unnamed')}: {item.get('description', 'No description')} (Category: {item.get('category', 'Unknown')}, Ingredients: {', '.join(item.get('ingredients', []))}, Tags: {', '.join(item.get('tags', []))})\n"
+                
+                # Add today's date for expiry calculations
+                today = datetime.now().date()
+                context += f"\nToday's date is {today}.\n\n"
+                
+                # Add the user's question
+                context += f"User question: {prompt}\n\nPlease provide a helpful, detailed response based on the restaurant data above. If the data is empty, suggest adding sample data."
+                
+                # Call OpenAI API
+                response = call_openai_api(context, api_key, temperature)
+                st.markdown(response)
         
         # Add assistant response to chat history
-        st.session_state.ai_messages.append({"role": "assistant", "content": ai_response})
+        st.session_state.messages.append({"role": "assistant", "content": response})
     
-    # Quick action buttons
-    st.subheader("🚀 Quick AI Questions")
-    col1, col2, col3 = st.columns(3)
+    # API key missing message
+    if not api_key:
+        st.info("⚠️ Please enter your OpenAI API key in the sidebar to enable the AI chat functionality.")
     
-    with col1:
-        if st.button("🔴 Check Expired Items"):
-            prompt = "What ingredients in my inventory are expired or expiring soon? Please check the dates."
-            st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.ai_messages.append({"role": "assistant", "content": response})
-            st.rerun()
-    
-    with col2:
-        if st.button("🥗 Vegetarian Options"):
-            prompt = "Show me all vegetarian menu items and ingredients I have available."
-            st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.ai_messages.append({"role": "assistant", "content": response})
-            st.rerun()
-    
-    with col3:
-        if st.button("👨‍🍳 What Can I Cook?"):
-            prompt = "Based on my current inventory, what dishes can I make today? Check which menu items have all required ingredients available."
-            st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.ai_messages.append({"role": "assistant", "content": response})
-            st.rerun()
-    
-    # Additional quick buttons
-    col4, col5, col6 = st.columns(3)
-    
-    with col4:
-        if st.button("🎉 Plan Event Menu"):
-            prompt = "Help me plan a menu for a special event. Suggest a balanced menu with starters, mains, and desserts from my available dishes."
-            st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.ai_messages.append({"role": "assistant", "content": response})
-            st.rerun()
-    
-    with col5:
-        if st.button("🌱 Vegan Menu Ideas"):
-            prompt = "What vegan dishes and ingredients do I have? Suggest some vegan menu combinations."
-            st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.ai_messages.append({"role": "assistant", "content": response})
-            st.rerun()
-    
-    with col6:
-        if st.button("📊 Restaurant Analytics"):
-            prompt = "Give me an analysis of my restaurant data. What insights can you provide about my inventory and menu?"
-            st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.ai_messages.append({"role": "assistant", "content": response})
-            st.rerun()
+    # Quick action buttons (only show if API key is provided)
+    if api_key:
+        st.subheader("🚀 Quick Questions")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔴 Expired Ingredients"):
+                prompt = "What ingredients are expired or expiring soon? Please check the dates."
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                
+                # Prepare context
+                context = "You are EventBot, an AI assistant for a restaurant. You have access to the following restaurant data:\n\n"
+                context += f"INGREDIENT INVENTORY ({len(ingredients)} items):\n"
+                for name, data in ingredients.items():
+                    context += f"- {name}: {data.get('Quantity', 'Unknown')} (expires: {data.get('Expiry', 'Unknown')}, type: {data.get('Type', 'Unknown')})\n"
+                context += f"\nToday's date is {datetime.now().date()}.\n\n"
+                context += f"User question: {prompt}\n\nPlease provide a helpful response based on the restaurant data above."
+                
+                response = call_openai_api(context, api_key, temperature)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.rerun()
+        
+        with col2:
+            if st.button("🥗 Vegetarian Menu"):
+                prompt = "Show me all vegetarian menu items and ingredients I have available."
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                
+                # Prepare context
+                context = "You are EventBot, an AI assistant for a restaurant. You have access to the following restaurant data:\n\n"
+                context += f"INGREDIENT INVENTORY ({len(ingredients)} items):\n"
+                for name, data in ingredients.items():
+                    context += f"- {name}: {data.get('Quantity', 'Unknown')} (expires: {data.get('Expiry', 'Unknown')}, type: {data.get('Type', 'Unknown')})\n"
+                
+                context += f"\nMENU ITEMS ({len(menu_items)} dishes):\n"
+                for item_id, item in menu_items.items():
+                    context += f"- {item.get('name', 'Unnamed')}: {item.get('description', 'No description')} (Category: {item.get('category', 'Unknown')}, Ingredients: {', '.join(item.get('ingredients', []))}, Tags: {', '.join(item.get('tags', []))})\n"
+                
+                context += f"\nUser question: {prompt}\n\nPlease provide a helpful response based on the restaurant data above."
+                
+                response = call_openai_api(context, api_key, temperature)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.rerun()
+        
+        with col3:
+            if st.button("👨‍🍳 What Can We Make?"):
+                prompt = "Based on my current inventory, what dishes can I make today? Check which menu items have all required ingredients available."
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                
+                # Prepare context
+                context = "You are EventBot, an AI assistant for a restaurant. You have access to the following restaurant data:\n\n"
+                context += f"INGREDIENT INVENTORY ({len(ingredients)} items):\n"
+                for name, data in ingredients.items():
+                    context += f"- {name}: {data.get('Quantity', 'Unknown')} (expires: {data.get('Expiry', 'Unknown')}, type: {data.get('Type', 'Unknown')})\n"
+                
+                context += f"\nMENU ITEMS ({len(menu_items)} dishes):\n"
+                for item_id, item in menu_items.items():
+                    context += f"- {item.get('name', 'Unnamed')}: {item.get('description', 'No description')} (Category: {item.get('category', 'Unknown')}, Ingredients: {', '.join(item.get('ingredients', []))}, Tags: {', '.join(item.get('tags', []))})\n"
+                
+                context += f"\nToday's date is {datetime.now().date()}.\n\n"
+                context += f"User question: {prompt}\n\nPlease provide a helpful response based on the restaurant data above. Check if all ingredients for each dish are available and not expired."
+                
+                response = call_openai_api(context, api_key, temperature)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.rerun()
 
 # Ingredient Inventory Page
 elif page == "Ingredient Inventory":
@@ -665,24 +652,6 @@ elif page == "Event Planning":
             
             budget_per_person = st.number_input("Budget per Person ($)", min_value=0.0, value=25.0, step=0.50)
         
-        # AI Event Planning Assistant
-        st.subheader("🤖 AI Event Planning Assistant")
-        if st.button("Get AI Event Planning Suggestions", type="primary"):
-            planning_prompt = f"""I need help planning an event with these details:
-            - Event Name: {event_name}
-            - Date: {event_date}
-            - Number of Guests: {guest_count}
-            - Dietary Requirements: {', '.join(dietary_requirements) if dietary_requirements else 'None specified'}
-            - Budget per Person: ${budget_per_person}
-            
-            Please suggest an appropriate menu from my available dishes, check ingredient availability, and provide a complete event plan with recommendations."""
-            
-            with st.spinner("🤖 AI is creating your event plan..."):
-                ai_response = call_gemini_ai(planning_prompt, ingredients, menu_items)
-            
-            st.write("**🎉 AI Event Planning Suggestions:**")
-            st.markdown(ai_response)
-        
         st.subheader("Select Menu Items")
         
         # Filter menu items by dietary requirements
@@ -774,4 +743,4 @@ elif page == "Event Planning":
 
 # Footer
 st.markdown("---")
-st.markdown("*EventBot - AI Assistant for Restaurant Event Planning | Powered by Google Gemini AI*")
+st.markdown("*EventBot - AI Assistant for Restaurant Event Planning*")
