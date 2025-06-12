@@ -6,18 +6,10 @@ import os
 
 # Initialize Firebase Admin SDK
 @st.cache_resource
-def initialize_firebase():
-    # Allow user to specify service account file path in UI
-    default_path = "/mount/src/send-help/restaurant-data-backend-firebase-adminsdk.json"
-    service_account_path = st.text_input(
-        "Firebase Service Account JSON Path",
-        value=default_path,
-        help="Enter the path to your Firebase service account JSON file, or set environment variables (FIREBASE_PRIVATE_KEY_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL)."
-    )
-    
+def initialize_firebase(service_account_path=None):
     try:
-        # Try loading from service account JSON file
-        if os.path.exists(service_account_path):
+        # Use service account JSON file if provided and exists
+        if service_account_path and os.path.exists(service_account_path):
             cred = credentials.Certificate(service_account_path)
         else:
             # Fallback to environment variables
@@ -35,7 +27,7 @@ def initialize_firebase():
             }
             if not all([firebase_config["private_key_id"], firebase_config["private_key"], firebase_config["client_email"]]):
                 st.error(
-                    f"Service account file not found at: {service_account_path}. "
+                    f"Service account file not found at: {service_account_path or 'No path provided'}. "
                     "Environment variables (FIREBASE_PRIVATE_KEY_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL) are also missing or incomplete. "
                     "Please provide a valid service account JSON file or set the environment variables."
                 )
@@ -147,8 +139,16 @@ def delete_menu_item(db, dish_id):
 # Initialize Streamlit app
 st.title("Restaurant Event Planning System")
 
-# Initialize Firebase
-db = initialize_firebase()
+# Get Firebase service account path from user
+default_path = "/mount/src/send-help/restaurant-data-backend-firebase-adminsdk.json"
+service_account_path = st.text_input(
+    "Firebase Service Account JSON Path",
+    value=default_path,
+    help="Enter the path to your Firebase service account JSON file, or leave blank to use environment variables (FIREBASE_PRIVATE_KEY_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL)."
+)
+
+# Initialize Firebase with the provided path
+db = initialize_firebase(service_account_path)
 
 # Check if Firebase initialization failed
 if db is None:
@@ -267,15 +267,3 @@ elif page == "Menu":
             else:
                 st.error(f"Failed to delete menu item '{item['name']}'.")
         st.write("---")
-
-# Optional: Placeholder for Gemini API integration
-# To enable, uncomment and configure with the Gemini API key
-"""
-import google.generativeai as genai
-genai.configure(api_key="AIzaSyAdOsM8ZyjaclxIzy29AdPLLop-NOH4GLw")
-def get_gemini_response(prompt):
-    model = genai.GenerativeModel("gemini-pro")
-    response = model.generate_content(prompt)
-    return response.text
-# Example usage: st.write(get_gemini_response("Suggest a recipe using available ingredients"))
-"""
