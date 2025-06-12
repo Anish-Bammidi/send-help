@@ -18,10 +18,6 @@ firebase_config = {
 # Firebase REST API base URL
 FIREBASE_URL = f"https://firestore.googleapis.com/v1/projects/{firebase_config['projectId']}/databases/(default)/documents"
 
-# Google AI API configuration
-GOOGLE_AI_API_KEY = firebase_config["apiKey"]
-GOOGLE_AI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
-
 # Helper Functions for Firebase REST API
 def get_collection(collection_name):
     """Fetch all documents from a collection using Firebase REST API"""
@@ -102,72 +98,302 @@ def add_document(collection_name, doc_id, data):
         st.error(f"Error: {e}")
         return False
 
-def call_google_ai(prompt, context_data=None):
-    """Call Google AI API for intelligent responses"""
-    try:
-        # Prepare context information
-        context = ""
-        if context_data:
-            ingredients = context_data.get('ingredients', {})
-            menu_items = context_data.get('menu_items', {})
-            
-            context += f"\nCurrent Restaurant Data:\n"
-            context += f"Ingredients in inventory: {len(ingredients)} items\n"
-            context += f"Menu items available: {len(menu_items)} dishes\n"
-            
-            if ingredients:
-                context += "\nIngredient Inventory:\n"
-                for name, data in list(ingredients.items())[:10]:  # Limit to first 10 for context
-                    context += f"- {name}: {data.get('Quantity', 'N/A')} (expires: {data.get('Expiry', 'N/A')}, type: {data.get('Type', 'N/A')})\n"
-            
-            if menu_items:
-                context += "\nMenu Items:\n"
-                for item_id, item in list(menu_items.items())[:10]:  # Limit to first 10 for context
-                    context += f"- {item.get('name', 'N/A')} ({item.get('category', 'N/A')}): {item.get('description', 'N/A')[:50]}...\n"
+def intelligent_chatbot_response(query, ingredients, menu_items):
+    """Generate intelligent responses based on query and data"""
+    query_lower = query.lower()
+    
+    # Analyze current data
+    today = datetime.now().date()
+    expired_ingredients = []
+    expiring_soon = []
+    
+    for name, data in ingredients.items():
+        try:
+            expiry_date = datetime.strptime(data.get('Expiry', ''), '%Y-%m-%d').date()
+            days_until_expiry = (expiry_date - today).days
+            if days_until_expiry < 0:
+                expired_ingredients.append((name, abs(days_until_expiry)))
+            elif days_until_expiry <= 7:
+                expiring_soon.append((name, days_until_expiry))
+        except:
+            continue
+    
+    # Inventory-related queries
+    if any(word in query_lower for word in ['inventory', 'ingredient', 'stock', 'supply']):
         
-        # Prepare the full prompt
-        full_prompt = f"""You are EventBot, an AI assistant for a restaurant's event-planning system. 
-        You help with ingredient inventory management, menu planning, and event organization.
-        
-        {context}
-        
-        User Question: {prompt}
-        
-        Please provide a helpful, specific response based on the restaurant data above. 
-        If the user asks about specific ingredients or menu items, reference the actual data.
-        Be concise but informative."""
-        
-        # Prepare request payload
-        payload = {
-            "contents": [{
-                "parts": [{
-                    "text": full_prompt
-                }]
-            }]
-        }
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        # Make API call
-        response = requests.post(
-            f"{GOOGLE_AI_URL}?key={GOOGLE_AI_API_KEY}",
-            headers=headers,
-            json=payload
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if 'candidates' in result and len(result['candidates']) > 0:
-                return result['candidates'][0]['content']['parts'][0]['text']
+        if any(word in query_lower for word in ['expired', 'expire', 'expiring', 'old', 'bad']):
+            if expired_ingredients:
+                response = f"🔴 **EXPIRED INGREDIENTS ({len(expired_ingredients)} items):**\n"
+                for name, days_ago in expired_ingredients[:10]:
+                    response += f"• {name}: Expired {days_ago} days ago\n"
+                if len(expired_ingredients) > 10:
+                    response += f"... and {len(expired_ingredients) - 10} more expired items\n"
             else:
-                return "I'm sorry, I couldn't generate a response. Please try again."
-        else:
-            return f"Error calling AI service: {response.status_code}"
+                response = "✅ Great news! No expired ingredients found in inventory."
             
-    except Exception as e:
-        return f"Error: {str(e)}"
+            if expiring_soon:
+                response += f"\n⚠️ **EXPIRING SOON ({len(expiring_soon)} items):**\n"
+                for name, days in expiring_soon:
+                    response += f"• {name}: {days} days remaining\n"
+            
+            return response
+        
+        elif any(word in query_lower for word in ['vegetarian', 'veg']):
+            veg_ingredients = {k: v for k, v in ingredients.items() if v.get('Type', '').lower() == 'vegetarian'}
+            if veg_ingredients:
+                response = f"🥬 **VEGETARIAN INGREDIENTS ({len(veg_ingredients)} items):**\n"
+                for name, data in list(veg_ingredients.items())[:15]:
+                    qty = data.get('Quantity', 'Unknown qty')
+                    expiry = data.get('Expiry', 'No expiry')
+                    response += f"• {name}: {qty} (expires: {expiry})\n"
+                if len(veg_ingredients) > 15:
+                    response += f"... and {len(veg_ingredients) - 15} more vegetarian ingredients"
+                return response
+            else:
+                return "❌ No vegetarian ingredients found in inventory."
+        
+        elif any(word in query_lower for word in ['vegan']):
+            vegan_ingredients = {k: v for k, v in ingredients.items() if v.get('Type', '').lower() == 'vegan'}
+            if vegan_ingredients:
+                response = f"🌱 **VEGAN INGREDIENTS ({len(vegan_ingredients)} items):**\n"
+                for name, data in list(vegan_ingredients.items())[:15]:
+                    qty = data.get('Quantity', 'Unknown qty')
+                    expiry = data.get('Expiry', 'No expiry')
+                    response += f"• {name}: {qty} (expires: {expiry})\n"
+                if len(vegan_ingredients) > 15:
+                    response += f"... and {len(vegan_ingredients) - 15} more vegan ingredients"
+                return response
+            else:
+                return "❌ No vegan ingredients found in inventory."
+        
+        elif any(word in query_lower for word in ['low', 'running out', 'need', 'buy', 'order']):
+            # This is a placeholder - you could implement quantity analysis here
+            return f"📦 **INVENTORY SUMMARY:**\n• Total ingredients: {len(ingredients)}\n• Expired: {len(expired_ingredients)}\n• Expiring soon: {len(expiring_soon)}\n\nFor detailed quantity analysis, please check the Inventory Management section."
+        
+        else:
+            # General inventory query
+            veg_count = len([i for i in ingredients.values() if i.get('Type', '').lower() == 'vegetarian'])
+            vegan_count = len([i for i in ingredients.values() if i.get('Type', '').lower() == 'vegan'])
+            mixed_count = len([i for i in ingredients.values() if i.get('Type', '').lower() == 'mixed'])
+            
+            return f"📦 **INVENTORY OVERVIEW:**\n• Total ingredients: {len(ingredients)}\n• Vegetarian: {veg_count}\n• Vegan: {vegan_count}\n• Mixed: {mixed_count}\n• Expired: {len(expired_ingredients)}\n• Expiring within 7 days: {len(expiring_soon)}"
+    
+    # Menu-related queries
+    elif any(word in query_lower for word in ['menu', 'dish', 'food', 'recipe', 'meal']):
+        
+        if any(word in query_lower for word in ['vegetarian', 'veg']):
+            veg_dishes = [item for item in menu_items.values() if 'vegetarian' in [tag.lower() for tag in item.get('tags', [])]]
+            if veg_dishes:
+                response = f"🥗 **VEGETARIAN DISHES ({len(veg_dishes)} items):**\n"
+                for dish in veg_dishes[:10]:
+                    response += f"• **{dish.get('name', 'Unnamed')}** ({dish.get('category', 'No category')})\n"
+                    response += f"  {dish.get('description', 'No description')[:80]}...\n\n"
+                if len(veg_dishes) > 10:
+                    response += f"... and {len(veg_dishes) - 10} more vegetarian dishes"
+                return response
+            else:
+                return "❌ No vegetarian dishes found on the menu."
+        
+        elif any(word in query_lower for word in ['vegan']):
+            vegan_dishes = [item for item in menu_items.values() if 'vegan' in [tag.lower() for tag in item.get('tags', [])]]
+            if vegan_dishes:
+                response = f"🌱 **VEGAN DISHES ({len(vegan_dishes)} items):**\n"
+                for dish in vegan_dishes[:10]:
+                    response += f"• **{dish.get('name', 'Unnamed')}** ({dish.get('category', 'No category')})\n"
+                    response += f"  {dish.get('description', 'No description')[:80]}...\n\n"
+                if len(vegan_dishes) > 10:
+                    response += f"... and {len(vegan_dishes) - 10} more vegan dishes"
+                return response
+            else:
+                return "❌ No vegan dishes found on the menu."
+        
+        elif any(word in query_lower for word in ['starter', 'appetizer', 'beginning']):
+            starters = [item for item in menu_items.values() if item.get('category', '').lower() == 'starter']
+            if starters:
+                response = f"🍤 **STARTER DISHES ({len(starters)} items):**\n"
+                for dish in starters:
+                    response += f"• **{dish.get('name', 'Unnamed')}**\n"
+                    response += f"  {dish.get('description', 'No description')}\n"
+                    if dish.get('tags'):
+                        response += f"  Tags: {', '.join(dish.get('tags', []))}\n\n"
+                return response
+            else:
+                return "❌ No starter dishes found on the menu."
+        
+        elif any(word in query_lower for word in ['main', 'entree', 'primary']):
+            mains = [item for item in menu_items.values() if item.get('category', '').lower() == 'main']
+            if mains:
+                response = f"🍖 **MAIN DISHES ({len(mains)} items):**\n"
+                for dish in mains:
+                    response += f"• **{dish.get('name', 'Unnamed')}**\n"
+                    response += f"  {dish.get('description', 'No description')}\n"
+                    if dish.get('tags'):
+                        response += f"  Tags: {', '.join(dish.get('tags', []))}\n\n"
+                return response
+            else:
+                return "❌ No main dishes found on the menu."
+        
+        elif any(word in query_lower for word in ['dessert', 'sweet', 'cake', 'pudding']):
+            desserts = [item for item in menu_items.values() if item.get('category', '').lower() == 'dessert']
+            if desserts:
+                response = f"🍰 **DESSERT DISHES ({len(desserts)} items):**\n"
+                for dish in desserts:
+                    response += f"• **{dish.get('name', 'Unnamed')}**\n"
+                    response += f"  {dish.get('description', 'No description')}\n"
+                    if dish.get('tags'):
+                        response += f"  Tags: {', '.join(dish.get('tags', []))}\n\n"
+                return response
+            else:
+                return "❌ No dessert dishes found on the menu."
+        
+        else:
+            # General menu overview
+            categories = {}
+            for item in menu_items.values():
+                cat = item.get('category', 'Unknown')
+                categories[cat] = categories.get(cat, 0) + 1
+            
+            response = f"🍽️ **MENU OVERVIEW:**\n• Total dishes: {len(menu_items)}\n\n**By Category:**\n"
+            for cat, count in categories.items():
+                response += f"• {cat}: {count} dishes\n"
+            
+            # Add dietary info
+            all_tags = []
+            for item in menu_items.values():
+                all_tags.extend(item.get('tags', []))
+            
+            if all_tags:
+                tag_counts = {}
+                for tag in all_tags:
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                
+                response += "\n**Dietary Options:**\n"
+                for tag, count in sorted(tag_counts.items()):
+                    response += f"• {tag}: {count} dishes\n"
+            
+            return response
+    
+    # "What can we make" queries
+    elif any(phrase in query_lower for phrase in ['what can we make', 'what can i make', 'available dishes', 'possible dishes', 'makeable']):
+        available_ingredients = set(ingredients.keys())
+        makeable_dishes = []
+        
+        for dish_id, dish in menu_items.items():
+            dish_ingredients = set(dish.get('ingredients', []))
+            if dish_ingredients.issubset(available_ingredients):
+                # Check if ingredients are not expired
+                all_fresh = True
+                for ingredient in dish_ingredients:
+                    if ingredient in ingredients:
+                        try:
+                            expiry_date = datetime.strptime(ingredients[ingredient].get('Expiry', ''), '%Y-%m-%d').date()
+                            if expiry_date < today:
+                                all_fresh = False
+                                break
+                        except:
+                            continue
+                
+                if all_fresh:
+                    makeable_dishes.append(dish)
+        
+        if makeable_dishes:
+            response = f"👨‍🍳 **DISHES YOU CAN MAKE ({len(makeable_dishes)} items):**\n\n"
+            for dish in makeable_dishes[:15]:
+                response += f"• **{dish.get('name', 'Unnamed')}** ({dish.get('category', 'No category')})\n"
+                response += f"  {dish.get('description', 'No description')[:60]}...\n"
+                response += f"  Ingredients: {', '.join(dish.get('ingredients', []))}\n\n"
+            
+            if len(makeable_dishes) > 15:
+                response += f"... and {len(makeable_dishes) - 15} more dishes you can make!"
+            
+            return response
+        else:
+            return "❌ Unfortunately, you cannot make any complete dishes with your current fresh inventory. Consider restocking ingredients or checking the shopping list in Event Planning."
+    
+    # Event planning queries
+    elif any(word in query_lower for word in ['event', 'party', 'celebration', 'plan', 'organize']):
+        return "🎉 **EVENT PLANNING ASSISTANCE:**\n\nI can help you plan events! Here's what I can do:\n\n• Suggest menu items based on guest count\n• Filter dishes by dietary requirements\n• Check ingredient availability\n• Generate shopping lists\n• Calculate portions and costs\n\nPlease visit the 'Event Planning' section for detailed event planning, or ask me specific questions like:\n• 'Plan a vegetarian menu for 20 people'\n• 'What ingredients do I need for a wedding reception?'\n• 'Show me gluten-free options for an event'"
+    
+    # Specific ingredient queries
+    elif any(ingredient.lower() in query_lower for ingredient in ingredients.keys()):
+        found_ingredients = [name for name in ingredients.keys() if name.lower() in query_lower]
+        
+        if found_ingredients:
+            response = "🔍 **INGREDIENT DETAILS:**\n\n"
+            for ingredient_name in found_ingredients[:5]:  # Limit to 5 matches
+                data = ingredients[ingredient_name]
+                response += f"**{ingredient_name}:**\n"
+                response += f"• Quantity: {data.get('Quantity', 'Unknown')}\n"
+                response += f"• Expiry: {data.get('Expiry', 'Unknown')}\n"
+                response += f"• Type: {data.get('Type', 'Unknown')}\n"
+                if data.get('Alternatives'):
+                    response += f"• Alternatives: {data.get('Alternatives')}\n"
+                
+                # Check expiry status
+                try:
+                    expiry_date = datetime.strptime(data.get('Expiry', ''), '%Y-%m-%d').date()
+                    days_until_expiry = (expiry_date - today).days
+                    if days_until_expiry < 0:
+                        response += f"• Status: 🔴 EXPIRED ({abs(days_until_expiry)} days ago)\n"
+                    elif days_until_expiry <= 7:
+                        response += f"• Status: ⚠️ Expiring soon ({days_until_expiry} days)\n"
+                    else:
+                        response += f"• Status: ✅ Fresh ({days_until_expiry} days remaining)\n"
+                except:
+                    response += "• Status: ❓ Unknown expiry\n"
+                
+                response += "\n"
+            
+            return response
+    
+    # Help and general queries
+    elif any(word in query_lower for word in ['help', 'what can you do', 'commands', 'options']):
+        return """🤖 **EVENTBOT CAPABILITIES:**
+
+I can help you with:
+
+**📦 INVENTORY MANAGEMENT:**
+• "What ingredients are expiring soon?"
+• "Show me vegetarian ingredients"
+• "What vegan ingredients do we have?"
+• "List expired ingredients"
+
+**🍽️ MENU INFORMATION:**
+• "Show me vegetarian dishes"
+• "What desserts do we have?"
+• "List all starter dishes"
+• "What vegan options are available?"
+
+**👨‍🍳 COOKING ASSISTANCE:**
+• "What can we make with current inventory?"
+• "What dishes can I prepare today?"
+
+**🎉 EVENT PLANNING:**
+• "Plan a menu for 50 people"
+• "What do I need for a vegetarian event?"
+
+**🔍 SPECIFIC SEARCHES:**
+• Ask about specific ingredients: "Do we have tomatoes?"
+• Get ingredient details: "Tell me about chicken breast"
+
+Try asking me anything about your restaurant's inventory, menu, or event planning needs!"""
+    
+    # Default response for unrecognized queries
+    else:
+        return f"""🤔 I'm not sure how to help with that specific question, but I can assist you with:
+
+• **Inventory questions** - Ask about ingredients, expiry dates, or stock levels
+• **Menu information** - Get details about dishes, categories, or dietary options  
+• **Event planning** - Help plan menus for events and parties
+• **Cooking suggestions** - Find out what dishes you can make
+
+**Current Data Summary:**
+• {len(ingredients)} ingredients in inventory
+• {len(menu_items)} dishes on menu
+• {len(expired_ingredients)} expired ingredients
+• {len(expiring_soon)} ingredients expiring soon
+
+Try asking something like: "What vegetarian dishes do we have?" or "What ingredients are expiring soon?""""
 
 # Streamlit App Configuration
 st.set_page_config(
@@ -216,18 +442,6 @@ def add_menu_item(item_id, name, description, category, ingredients, tags):
         'tags': tags
     }
     return add_document('menu', item_id, data)
-
-def process_eventbot_query(query):
-    """Process EventBot queries using Google AI"""
-    ingredients = get_ingredient_inventory()
-    menu_items = get_menu_items()
-    
-    context_data = {
-        'ingredients': ingredients,
-        'menu_items': menu_items
-    }
-    
-    return call_google_ai(query, context_data)
 
 # Dashboard Page
 if page == "Dashboard":
@@ -305,10 +519,27 @@ elif page == "EventBot Chat":
     st.header("🤖 EventBot AI Assistant")
     st.write("Ask me anything about your restaurant's inventory, menu, or event planning!")
     
+    # Load data for chatbot
+    ingredients = get_ingredient_inventory()
+    menu_items = get_menu_items()
+    
     # Chat interface
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "Hello! I'm EventBot, your AI assistant for restaurant event planning. I can help you with:\n\n• Ingredient inventory questions\n• Menu item information\n• Event planning suggestions\n• Checking what dishes can be made\n• Dietary requirement planning\n\nWhat would you like to know?"}
+            {"role": "assistant", "content": f"""Hello! I'm EventBot, your intelligent restaurant assistant! 🍽️
+
+I have access to your current data:
+• **{len(ingredients)} ingredients** in inventory
+• **{len(menu_items)} menu items** available
+
+I can help you with:
+• Inventory management and expiry tracking
+• Menu information and dietary options
+• Event planning and menu suggestions
+• Ingredient availability checks
+• Recipe and cooking assistance
+
+What would you like to know about your restaurant?"""}
         ]
     
     # Display chat messages
@@ -323,37 +554,67 @@ elif page == "EventBot Chat":
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Generate response using Google AI
+        # Generate intelligent response
         with st.chat_message("assistant"):
-            with st.spinner("EventBot is thinking..."):
-                response = process_eventbot_query(prompt)
+            with st.spinner("EventBot is analyzing your data..."):
+                response = intelligent_chatbot_response(prompt, ingredients, menu_items)
             st.markdown(response)
         
         # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response})
     
     # Quick action buttons
-    st.subheader("Quick Questions")
+    st.subheader("🚀 Quick Questions")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("What ingredients are expiring soon?"):
-            st.session_state.messages.append({"role": "user", "content": "What ingredients are expiring soon?"})
-            response = process_eventbot_query("What ingredients are expiring soon?")
+        if st.button("🔴 Expired Ingredients"):
+            prompt = "What ingredients are expired?"
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            response = intelligent_chatbot_response(prompt, ingredients, menu_items)
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.rerun()
     
     with col2:
-        if st.button("Show me vegetarian menu items"):
-            st.session_state.messages.append({"role": "user", "content": "Show me vegetarian menu items"})
-            response = process_eventbot_query("Show me vegetarian menu items")
+        if st.button("🥗 Vegetarian Menu"):
+            prompt = "Show me vegetarian menu items"
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            response = intelligent_chatbot_response(prompt, ingredients, menu_items)
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.rerun()
     
     with col3:
-        if st.button("What can we make with current inventory?"):
-            st.session_state.messages.append({"role": "user", "content": "What can we make with current inventory?"})
-            response = process_eventbot_query("What can we make with current inventory?")
+        if st.button("👨‍🍳 What Can We Make?"):
+            prompt = "What can we make with current inventory?"
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            response = intelligent_chatbot_response(prompt, ingredients, menu_items)
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.rerun()
+    
+    # Additional quick buttons
+    col4, col5, col6 = st.columns(3)
+    
+    with col4:
+        if st.button("🌱 Vegan Options"):
+            prompt = "What vegan dishes do we have?"
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            response = intelligent_chatbot_response(prompt, ingredients, menu_items)
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.rerun()
+    
+    with col5:
+        if st.button("⚠️ Expiring Soon"):
+            prompt = "What ingredients are expiring soon?"
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            response = intelligent_chatbot_response(prompt, ingredients, menu_items)
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.rerun()
+    
+    with col6:
+        if st.button("📊 Inventory Summary"):
+            prompt = "Give me an inventory overview"
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            response = intelligent_chatbot_response(prompt, ingredients, menu_items)
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.rerun()
 
@@ -536,24 +797,6 @@ elif page == "Event Planning":
                 ["vegetarian", "vegan", "gluten-free", "dairy-free", "nut-free", "halal", "kosher"])
             
             budget_per_person = st.number_input("Budget per Person ($)", min_value=0.0, value=25.0, step=0.50)
-        
-        # AI Event Planning Assistant
-        st.subheader("🤖 AI Event Planning Assistant")
-        if st.button("Get AI Event Planning Suggestions"):
-            planning_prompt = f"""Plan an event menu for:
-            - Event: {event_name}
-            - Date: {event_date}
-            - Guests: {guest_count}
-            - Dietary requirements: {', '.join(dietary_requirements) if dietary_requirements else 'None'}
-            - Budget per person: ${budget_per_person}
-            
-            Please suggest appropriate menu items from our available dishes and check ingredient availability."""
-            
-            with st.spinner("AI is planning your event..."):
-                ai_response = process_eventbot_query(planning_prompt)
-            
-            st.write("**AI Event Planning Suggestions:**")
-            st.write(ai_response)
         
         st.subheader("Select Menu Items")
         
