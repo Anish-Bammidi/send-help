@@ -2,6 +2,11 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
+import google.generativeai as genai
+
+# Configure Gemini API
+GEMINI_API_KEY = "AIzaSyAdOsM8ZyjaclxIzy29AdPLLop-NOH4GLw"
+genai.configure(api_key=GEMINI_API_KEY)
 
 # Initialize Firebase Admin SDK
 @st.cache_resource
@@ -125,6 +130,33 @@ def delete_menu_item(db, dish_id):
         st.error(f"Error deleting menu item: {str(e)}")
         return False
 
+# Chatbot Anna using Gemini API
+def chatbot_anna(db, user_input):
+    try:
+        # Fetch inventory and menu for context
+        ingredients = get_ingredient_inventory(db)
+        menu_items = get_menu_items(db)
+        
+        # Prepare context
+        ingredient_names = [item["ingredient_name"] for item in ingredients]
+        ingredient_details = "\n".join([f"- {item['ingredient_name']}: {item['Quantity']}, Expiry: {item['Expiry']}, Type: {item['Type']}" for item in ingredients])
+        menu_details = "\n".join([f"- {item['name']}: {item['description']}, Category: {item['category']}, Ingredients: {', '.join(item['ingredients'])}, Tags: {', '.join(item['tags'])}" for item in menu_items])
+        
+        # Construct prompt
+        prompt = (
+            f"You are Anna, a helpful restaurant event-planning assistant. Use the following data to answer the user's question:\n"
+            f"**Inventory**:\n{ingredient_details if ingredients else 'No ingredients available.'}\n"
+            f"**Menu**:\n{menu_details if menu_items else 'No menu items available.'}\n"
+            f"User question: {user_input}\n"
+            "Provide a concise and helpful response. For recipe suggestions, use available ingredients. For menu questions, reference menu items and their tags."
+        )
+        
+        model = genai.GenerativeModel("gemini-1.5-pro")
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Anna encountered an error: {str(e)}"
+
 # Initialize Streamlit app
 st.title("Restaurant Event Planning System")
 
@@ -138,7 +170,7 @@ if db is None:
 
 # Sidebar for navigation
 st.sidebar.header("Navigation")
-page = st.sidebar.radio("Select a page:", ["Inventory", "Menu"])
+page = st.sidebar.radio("Select a page:", ["Inventory", "Menu", "Chat with Anna"])
 
 # Inventory Page
 if page == "Inventory":
@@ -248,3 +280,31 @@ elif page == "Menu":
             else:
                 st.error(f"Failed to delete menu item '{item['name']}'.")
         st.write("---")
+
+# Chatbot Anna Page
+elif page == "Chat with Anna":
+    st.header("Chat with Anna")
+    st.write("Ask Anna for recipe suggestions, menu information, or event planning tips!")
+    
+    # Initialize chat history in session state
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    
+    # Display chat history
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    # User input
+    user_input = st.chat_input("Your question for Anna:")
+    if user_input:
+        # Add user message to chat history
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
+        
+        # Get Anna's response
+        with st.chat_message("assistant"):
+            response = chatbot_anna(db, user_input)
+            st.markdown(response)
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
