@@ -100,45 +100,30 @@ def add_document(collection_name, doc_id, data):
         st.error(f"Error adding document: {e}")
         return False
 
-def call_gemini_ai(user_message, ingredients_data, menu_data):
-    """Call Google Gemini AI API with restaurant context"""
+def call_gemini_ai_direct(user_message, ingredients_data, menu_data):
+    """Call Gemini AI DIRECTLY with user input - NO RULE-BASED LOGIC"""
     try:
-        # Prepare context about the restaurant data
-        context = f"""You are EventBot, an intelligent AI assistant for a restaurant's event-planning system. You have access to real-time restaurant data and should provide helpful, conversational responses.
+        # Build the context with restaurant data
+        context = f"""You are EventBot, an AI assistant for a restaurant. Here's the current restaurant data:
 
-CURRENT RESTAURANT DATA:
-
-INGREDIENT INVENTORY ({len(ingredients_data)} items):
+INGREDIENTS ({len(ingredients_data)} items):
 """
         
-        # Add ingredient details
+        # Add all ingredient data
         for name, data in ingredients_data.items():
-            context += f"- {name}: {data.get('Quantity', 'Unknown')} (expires: {data.get('Expiry', 'Unknown')}, type: {data.get('Type', 'Unknown')})\n"
+            context += f"- {name}: {data.get('Quantity', 'Unknown')} (expires: {data.get('Expiry', 'Unknown')}, type: {data.get('Type', 'Unknown')}, alternatives: {data.get('Alternatives', 'None')})\n"
         
         context += f"\nMENU ITEMS ({len(menu_data)} dishes):\n"
         
-        # Add menu details
+        # Add all menu data
         for item_id, item in menu_data.items():
             context += f"- {item.get('name', 'Unnamed')}: {item.get('description', 'No description')} (Category: {item.get('category', 'Unknown')}, Ingredients: {', '.join(item.get('ingredients', []))}, Tags: {', '.join(item.get('tags', []))})\n"
         
-        context += f"""
-
-Today's date is {datetime.now().date()}.
-
-INSTRUCTIONS:
-- Be conversational, helpful, and engaging
-- Answer questions about inventory, menu items, event planning, and cooking suggestions
-- Use the actual data provided above in your responses
-- Be specific and reference real ingredients/dishes when relevant
-- If asked about expiry dates, check the dates against today's date
-- For event planning, suggest appropriate menu items from the available dishes
-- If asked what can be made, check which menu items have all required ingredients available
-- Be creative and provide detailed suggestions
-- Use emojis to make responses more engaging
-
-USER QUESTION: {user_message}
-
-Please provide a helpful, detailed, and conversational response based on the restaurant data above."""
+        # Add today's date for context
+        context += f"\nToday's date: {datetime.now().date()}\n\n"
+        
+        # Add the user's EXACT question with NO preprocessing
+        context += f"User question: {user_message}\n\nPlease respond naturally and helpfully based on the restaurant data above."
 
         # Prepare the API request for Gemini
         payload = {
@@ -148,7 +133,7 @@ Please provide a helpful, detailed, and conversational response based on the res
                 }]
             }],
             "generationConfig": {
-                "temperature": 0.8,
+                "temperature": 0.9,  # High creativity
                 "topK": 40,
                 "topP": 0.95,
                 "maxOutputTokens": 2048,
@@ -193,16 +178,12 @@ Please provide a helpful, detailed, and conversational response based on the res
             else:
                 return "I'm sorry, I couldn't generate a response right now. Please try asking your question differently! 🤖"
         else:
-            st.error(f"Gemini API Error: {response.status_code} - {response.text}")
-            return f"I'm experiencing technical difficulties with my AI brain 🧠. Error: {response.status_code}"
+            return f"I'm experiencing technical difficulties. Error: {response.status_code}"
             
     except requests.exceptions.Timeout:
         return "I'm taking longer than usual to think! ⏰ Please try your question again."
-    except requests.exceptions.RequestException as e:
-        return f"I'm having trouble connecting to my AI service 🌐. Please check your internet connection and try again."
     except Exception as e:
-        st.error(f"Unexpected error: {str(e)}")
-        return f"I encountered an unexpected error 😅: {str(e)}. Please try again!"
+        return f"I encountered an error: {str(e)}. Please try again!"
 
 def create_sample_data():
     """Create sample data for testing"""
@@ -390,10 +371,10 @@ if page == "Dashboard":
         else:
             st.info("No menu items found. Click 'Add Sample Data' to get started!")
 
-# EventBot AI Chat Page
+# EventBot AI Chat Page - PURE GEMINI AI, NO RULES!
 elif page == "EventBot AI Chat":
     st.header("🤖 EventBot AI Assistant")
-    st.write("**Powered by Google Gemini AI** 🧠✨ - Ask me anything about your restaurant!")
+    st.write("**100% Pure Gemini AI** 🧠✨ - Ask me ANYTHING!")
     
     # Load data for chatbot
     ingredients = get_ingredient_inventory()
@@ -406,110 +387,94 @@ elif page == "EventBot AI Chat":
     with col2:
         st.metric("🍽️ Menu Items", len(menu_items))
     with col3:
-        st.metric("🤖 Gemini AI", "✅ Connected")
+        st.metric("🤖 Gemini AI", "✅ Direct")
     
     # Chat interface
-    if "gemini_messages" not in st.session_state:
-        st.session_state.gemini_messages = [
-            {"role": "assistant", "content": f"""Hey there! 👋 I'm EventBot, your AI-powered restaurant assistant running on Google Gemini! 🤖✨
-
-**I'm connected to your live restaurant data:**
-• **{len(ingredients)} ingredients** in inventory 📦
-• **{len(menu_items)} menu items** available 🍽️
-
-**I can help you with literally ANYTHING about your restaurant:**
-• 🔍 Smart inventory analysis and expiry tracking
-• 🥗 Menu recommendations and dietary suggestions  
-• 🎉 Creative event planning and menu curation
-• 👨‍🍳 Recipe ideas based on what you have
-• 📊 Data insights and restaurant analytics
-• 💡 Creative cooking suggestions and alternatives
-
-**Try asking me stuff like:**
-• "What's about to expire and what should I do with it?"
-• "Create a romantic dinner menu for 2 people"
-• "I have tomatoes and cheese, what can I make?"
-• "Plan a vegan party menu for 30 guests"
-• "Give me insights about my restaurant data"
-• "What's the most popular ingredient I have?"
-
-I'm powered by Google Gemini, so I can understand context, be creative, and give you detailed, helpful responses! What would you like to know? 🚀"""}
+    if "pure_ai_messages" not in st.session_state:
+        # Get initial greeting from Gemini AI
+        initial_prompt = f"""You are EventBot, an AI assistant for a restaurant. The restaurant currently has {len(ingredients)} ingredients and {len(menu_items)} menu items. Introduce yourself in a friendly, engaging way and explain what you can help with. Be conversational and welcoming."""
+        
+        initial_response = call_gemini_ai_direct(initial_prompt, ingredients, menu_items)
+        
+        st.session_state.pure_ai_messages = [
+            {"role": "assistant", "content": initial_response}
         ]
     
     # Display chat messages
-    for message in st.session_state.gemini_messages:
+    for message in st.session_state.pure_ai_messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # Chat input
-    if prompt := st.chat_input("Ask EventBot anything about your restaurant..."):
+    # Chat input - DIRECT TO GEMINI, NO PROCESSING!
+    if prompt := st.chat_input("Ask me anything..."):
         # Add user message to chat history
-        st.session_state.gemini_messages.append({"role": "user", "content": prompt})
+        st.session_state.pure_ai_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Generate AI response with Gemini
+        # Send DIRECTLY to Gemini AI with NO preprocessing
         with st.chat_message("assistant"):
             with st.spinner("🧠 Gemini AI is thinking..."):
-                ai_response = call_gemini_ai(prompt, ingredients, menu_items)
+                # DIRECT CALL - User input goes straight to Gemini!
+                ai_response = call_gemini_ai_direct(prompt, ingredients, menu_items)
             st.markdown(ai_response)
         
         # Add assistant response to chat history
-        st.session_state.gemini_messages.append({"role": "assistant", "content": ai_response})
+        st.session_state.pure_ai_messages.append({"role": "assistant", "content": ai_response})
     
-    # Quick action buttons
-    st.subheader("🚀 Quick AI Questions")
+    # Quick buttons that send DIRECT prompts to Gemini
+    st.subheader("🚀 Quick Questions")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🔴 Expiry Alert"):
-            prompt = "What ingredients are expired or expiring soon? Give me a detailed analysis and suggestions for what to do with them."
-            st.session_state.gemini_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.gemini_messages.append({"role": "assistant", "content": response})
+        if st.button("🔴 Expiry Check"):
+            prompt = "What ingredients are expired or expiring soon?"
+            st.session_state.pure_ai_messages.append({"role": "user", "content": prompt})
+            response = call_gemini_ai_direct(prompt, ingredients, menu_items)
+            st.session_state.pure_ai_messages.append({"role": "assistant", "content": response})
             st.rerun()
     
     with col2:
-        if st.button("🥗 Veggie Power"):
-            prompt = "Show me all my vegetarian options - both ingredients and menu items. Give me creative suggestions for vegetarian dishes I can make!"
-            st.session_state.gemini_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.gemini_messages.append({"role": "assistant", "content": response})
+        if st.button("🥗 Vegetarian Options"):
+            prompt = "Show me vegetarian ingredients and menu items"
+            st.session_state.pure_ai_messages.append({"role": "user", "content": prompt})
+            response = call_gemini_ai_direct(prompt, ingredients, menu_items)
+            st.session_state.pure_ai_messages.append({"role": "assistant", "content": response})
             st.rerun()
     
     with col3:
-        if st.button("👨‍🍳 Chef Mode"):
-            prompt = "I want to cook something amazing! Based on my current inventory, what dishes can I make today? Be creative and give me detailed cooking suggestions!"
-            st.session_state.gemini_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.gemini_messages.append({"role": "assistant", "content": response})
+        if st.button("👨‍🍳 What Can I Cook?"):
+            prompt = "What can I cook with my current ingredients?"
+            st.session_state.pure_ai_messages.append({"role": "user", "content": prompt})
+            response = call_gemini_ai_direct(prompt, ingredients, menu_items)
+            st.session_state.pure_ai_messages.append({"role": "assistant", "content": response})
             st.rerun()
     
-    # Additional quick buttons
+    # More quick buttons
     col4, col5, col6 = st.columns(3)
     
     with col4:
-        if st.button("🎉 Party Planner"):
-            prompt = "I need to plan an awesome event! Help me create a balanced, impressive menu using my available dishes. Be creative and suggest themes!"
-            st.session_state.gemini_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.gemini_messages.append({"role": "assistant", "content": response})
+        if st.button("🎉 Event Ideas"):
+            prompt = "Give me creative event menu ideas"
+            st.session_state.pure_ai_messages.append({"role": "user", "content": prompt})
+            response = call_gemini_ai_direct(prompt, ingredients, menu_items)
+            st.session_state.pure_ai_messages.append({"role": "assistant", "content": response})
             st.rerun()
     
     with col5:
-        if st.button("🌱 Vegan Vibes"):
-            prompt = "Show me all my vegan options and give me creative vegan menu ideas! I want to impress vegan customers."
-            st.session_state.gemini_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.gemini_messages.append({"role": "assistant", "content": response})
+        if st.button("🌱 Vegan Magic"):
+            prompt = "Show me vegan options and creative ideas"
+            st.session_state.pure_ai_messages.append({"role": "user", "content": prompt})
+            response = call_gemini_ai_direct(prompt, ingredients, menu_items)
+            st.session_state.pure_ai_messages.append({"role": "assistant", "content": response})
             st.rerun()
     
     with col6:
-        if st.button("📊 Data Genius"):
-            prompt = "Analyze my restaurant data like a pro! Give me insights, trends, recommendations, and suggestions for improvement."
-            st.session_state.gemini_messages.append({"role": "user", "content": prompt})
-            response = call_gemini_ai(prompt, ingredients, menu_items)
-            st.session_state.gemini_messages.append({"role": "assistant", "content": response})
+        if st.button("📊 Data Insights"):
+            prompt = "Analyze my restaurant data and give insights"
+            st.session_state.pure_ai_messages.append({"role": "user", "content": prompt})
+            response = call_gemini_ai_direct(prompt, ingredients, menu_items)
+            st.session_state.pure_ai_messages.append({"role": "assistant", "content": response})
             st.rerun()
 
 # Ingredient Inventory Page
@@ -692,32 +657,16 @@ elif page == "Event Planning":
             
             budget_per_person = st.number_input("Budget per Person ($)", min_value=0.0, value=25.0, step=0.50)
         
-        # AI Event Planning Assistant
-        st.subheader("🤖 Gemini AI Event Planning Assistant")
-        if st.button("✨ Get AI Event Planning Magic", type="primary"):
-            planning_prompt = f"""I need your creative help planning an amazing event! Here are the details:
-
-Event Details:
-- Event Name: {event_name}
-- Date: {event_date}
-- Number of Guests: {guest_count}
-- Dietary Requirements: {', '.join(dietary_requirements) if dietary_requirements else 'None specified'}
-- Budget per Person: ${budget_per_person}
-
-Please be my creative event planning genius! I want you to:
-1. Suggest an amazing, balanced menu from my available dishes
-2. Check ingredient availability and suggest alternatives if needed
-3. Give me creative presentation ideas and themes
-4. Provide a complete event plan with recommendations
-5. Calculate if I have enough ingredients for all guests
-6. Suggest any additional items I might need
-
-Make this event unforgettable! Be creative and detailed in your suggestions."""
+        # AI Event Planning Assistant - DIRECT GEMINI CALL
+        st.subheader("🤖 Pure Gemini AI Event Planner")
+        if st.button("✨ Get AI Event Plan", type="primary"):
+            # Send event details DIRECTLY to Gemini
+            planning_prompt = f"""Plan an event for me! Event: {event_name}, Date: {event_date}, Guests: {guest_count}, Dietary requirements: {dietary_requirements}, Budget: ${budget_per_person} per person. Create a complete event plan with menu suggestions from my available dishes."""
             
-            with st.spinner("🧠 Gemini AI is creating your magical event plan..."):
-                ai_response = call_gemini_ai(planning_prompt, ingredients, menu_items)
+            with st.spinner("🧠 Gemini AI is planning your event..."):
+                ai_response = call_gemini_ai_direct(planning_prompt, ingredients, menu_items)
             
-            st.write("**✨ Your AI-Generated Event Plan:**")
+            st.write("**✨ Your AI Event Plan:**")
             st.markdown(ai_response)
         
         st.subheader("Select Menu Items")
@@ -811,4 +760,4 @@ Make this event unforgettable! Be creative and detailed in your suggestions."""
 
 # Footer
 st.markdown("---")
-st.markdown("*EventBot - AI Assistant for Restaurant Event Planning | Powered by Google Gemini AI 🧠✨*")
+st.markdown("*EventBot - 100% Pure Gemini AI Assistant 🧠✨*")
