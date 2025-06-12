@@ -2,53 +2,33 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
-import os
 
 # Initialize Firebase Admin SDK
 @st.cache_resource
 def initialize_firebase():
     try:
-        # Default path for service account JSON file
-        service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT_PATH", "/mount/src/send-help/restaurant-data-backend-firebase-adminsdk.json")
-        
-        # Try loading from service account JSON file
-        if os.path.exists(service_account_path):
-            cred = credentials.Certificate(service_account_path)
-        else:
-            # Fallback to environment variables
-            firebase_config = {
-                "type": "service_account",
-                "project_id": "restaurant-data-backend",
-                "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID"),
-                "private_key": os.environ.get("FIREBASE_PRIVATE_KEY"),
-                "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
-                "client_id": os.environ.get("FIREBASE_CLIENT_ID", "115855681795792637429"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_X509_CERT_URL", "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40restaurant-data-backend.iam.gserviceaccount.com"),
-                "universe_domain": "googleapis.com"
-            }
-            if not all([firebase_config["private_key_id"], firebase_config["private_key"], firebase_config["client_email"]]):
-                st.error(
-                    f"Service account file not found at: {service_account_path}. "
-                    "Environment variables (FIREBASE_PRIVATE_KEY_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL) are also missing or incomplete. "
-                    "To fix this, please ensure the service account JSON file is placed at {service_account_path} or set the environment variable FIREBASE_SERVICE_ACCOUNT_PATH to its location, e.g.,:\n"
-                    "   export FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/restaurant-data-backend-firebase-adminsdk.json\n"
-                    "Alternatively, set these environment variables from the JSON file:\n"
-                    "   export FIREBASE_PRIVATE_KEY_ID='fdf27bcbb8e2ab65fe5ed4f812478f550ca7a40a'\n"
-                    "   export FIREBASE_PRIVATE_KEY='-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDNYUFVRchSeS65\\nwp7vh62xYdX7SZuDplUWZtEyywB8i/lSB5btHMrVkW5d/810qVrxBY7fkqYlqvRH\\nRqXOtwOPG72vZbO5q3TH9GI8uhaMoW92tpTIc0umlzG0Z8Uf1djkSBfydwsSUuye\\nt9P6MYi+iz1zI6nalSdxSgenRir/jLMDtP3+FDksLOaHja9g2eWT8YfnnP/mdb5J\\nI20dLtvuPwyE9dOMMVAI7/FJ0nVF3dnWmKIwf9kMWdX/vQPEdNzfZTzFsy0+335H\\nw6SbNhpVWrZcxMIb7E7MUp26VJw0MofiIuPlZwA+9ICQajTUnyriyBv0heYjlr/k\\noeRl4g+lAgMBAAECggEAJlAlCbUPonEIWi94Ckunh55udmb8G6JRH7F1B7JuiA1t\\nqJORYHDdVtt9oQpiB8gbFrjYdxUqqP67/LrtbgNeptkAOQLyNOoLCk0o8Vauo7Pu\\n8PitBzrY6z4rz9GG6MIyKJ3ZV8pE1rmA+jflU7hfX9pmT38g7c2i0sPCaz5QAaVm\\nLoKtRbdCgsnfbCvic+nd7m4x1sFxljUG9bjag3821qWbv8YHz1IqVhKma4y7DRbv\\nStxGiV+XH8K9AD8f9caQFsBfPEvovPiZhsBqbF7DM/psQ8QkTgICrs6zb6pOZyUi\\ndpbq5oal0ynVZpYXkC/2LPnpETP+3qcPRaz4DXuluQKBgQD2e8aC9Q8JTVmJ7RdE\\nXP8KBForSDA3tZ0fLGxTJH286bhzUVlsUg9AFaGpgzOS3BGfzk4wfZ/g58/9kbyt\\niGH/yi0RMyrrO9wwY4UoRaNC2AkgtZt1JhOPIChrMGW2dIsVq+I8VPkbqUtgl+bd\\n5MrN0Qz7MgoGEbOWsfAoMR8uGQKBgQDVTzcDmAZ5qkUoY9idtABCOdDIUgbmPFbr\\nWOuCAxVh7AhzfgC44igZm+T97x/xP1Pj7w6wwTCF9T/rKQo7TFaAMGeih+hfz6GI\\ncPf2m/UhO6vGqF9etA8VHp3p+eAc4L4obAcHjTbMmOR4l99hgWD9giHFpQwH94FS\\nt0hmYbbHbQKBgGl95iNMYOgZS9YlPA0NRDZ0UGcv2TsuppWd/KrE9m+xFDl+uqgK\\nou5Jk8wqFBupxn0/3eURDylB7ZnYEwmuUksYq5st7BOLphyrq2TmEQ7dyWJPd752\\n0m4yVDo0F4Q0cwaObyBlOcyl81XfDXcwob/e1hB4hSO91cAMXf3FsFOZAoGAI9x/\\neUEzxXyUx+eRYWIDsR6bNTJlKov2aPa4EVGHZMET4qbKZErRRwzogLCVBDALYISu\\nSZURHVRP/K8Xo0SAPmjk43RJ4uG7XH7xkSpDGeU4SdvAvOE0r+5HyjBSN0ipb45J\\n2EErd1Y1Avk1euUPc09PcjT/Qs+flFJv/5Zp7jkCgYEAhtTs0gnnRv694Doss/KB\\nxgECRq+Z/rfeYnLTFCy/5JTequs1C8rJFEkJMGXMhQz1oVgLRuMz3g8ZVuUsFi4R\\nj0cZkXVAmDUKdu4AUrGi9odPewndE922bx/74FU3RXXoWhtQf7biRtAinm7NjD12\\nPph4hjoK6uO6dAMDIZ3RsGY=\\n-----END PRIVATE KEY-----\\n'\n"
-                    "   export FIREBASE_CLIENT_EMAIL='firebase-adminsdk-fbsvc@restaurant-data-backend.iam.gserviceaccount.com'\n"
-                )
-                return None
-            cred = credentials.Certificate(firebase_config)
+        # Service account credentials embedded directly
+        firebase_config = {
+            "type": "service_account",
+            "project_id": "restaurant-data-backend",
+            "private_key_id": "fdf27bcbb8e2ab65fe5ed4f812478f550ca7a40a",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDNYUFVRchSeS65\nwp7vh62xYdX7SZuDplUWZtEyywB8i/lSB5btHMrVkW5d/810qVrxBY7fkqYlqvRH\nRqXOtwOPG72vZbO5q3TH9GI8uhaMoW92tpTIc0umlzG0Z8Uf1djkSBfydwsSUuye\nt9P6MYi+iz1zI6nalSdxSgenRir/jLMDtP3+FDksLOaHja9g2eWT8YfnnP/mdb5J\nI20dLtvuPwyE9dOMMVAI7/FJ0nVF3dnWmKIwf9kMWdX/vQPEdNzfZTzFsy0+335H\nw6SbNhpVWrZcxMIb7E7MUp26VJw0MofiIuPlZwA+9ICQajTUnyriyBv0heYjlr/k\noeRl4g+lAgMBAAECggEAJlAlCbUPonEIWi94Ckunh55udmb8G6JRH7F1B7JuiA1t\nqJORYHDdVtt/OQpiB8gbFrjYdxUqqP67/LrtbgNeptkAOQLyNOoLCk0o8Vauo7Pu\n8PitBzrY6z4rz9GG6MIyKJ3ZV8pE1rmA+jflU7hfX9pmT38g7c2i0sPCaz5QAaVm\nLoKtRbdCgsnfbCvic+nd7m4x1sFxljUG9bjag3821qWbv8YHz1IqVhKma4y7DRbv\nStxGiV+XH8K9AD8f9caQFsBfPEvovPiZhsBqbF7DM/psQ8QkTgICrs6zb6pOZyUi\ndpbq5oal0ynVZpYXkC/2LPnpETP+3qcPRaz4DXuluQKBgQD2e8aC9Q8JTVmJ7RdE\nXP8KBForSDA3tZ0fLGxTJH286bhzUVlsUg9AFaGpgzOS3BGfzk4wfZ/g58/9kbyt\niGH/yi0RMyrrO9wwY4UoRaNC2AkgtZt1JhOPIChrMGW2dIsVq+I8VPkbqUtgl+bd\n5MrN0Qz7MgoGEbOWsfAoMR8uGQKBgQDVTzcDmAZ5qkUoY9idtABCOdDIUgbmPFbr\nWOuCAxVh7AhzfgC44igZm+T97x/xP1Pj7w6wwTCF9T/rKQo7TFaAMGeih+hfz6GI\ncPf2m/UhO6vGqF9etA8VHp3p+eAc4L4obAcHjTbMmOR4l99hgWD9giHFpQwH94FS\nt0hmYbbHbQKBgGl95iNMYOgZS9YlPA0NRDZ0UGcv2TsuppWd/KrE9m+xFDl+uqgK\nou5Jk8wqFBupxn0/3eURDylB7ZnYEwmuUksYq5st7BOLphyrq2TmEQ7dyWJPd752\n0m4yVDo0F4Q0cwaObyBlOcyl81XfDXcwob/e1hB4hSO91cAMXf3FsFOZAoGAI9x/\neUEzxXyUx+eRYWIDsR6bNTJlKov2aPa4EVGHZMET4qbKZErRRwzogLCVBDALYISu\nSZURHVRP/K8Xo0SAPmjk43RJ4uG7XH7xkSpDGeU4SdvAvOE0r+5HyjBSN0ipb45J\n2EErd1Y1Avk1euUPc09PcjT/Qs+flFJv/5Zp7jkCgYEAhtTs0gnnRv694Doss/KB\nxgECRq+Z/rfeYnLTFCy/5JTequs1C8rJFEkJMGXMhQz1oVgLRuMz3g8ZVuUsFi4R\nj0cZkXVAmDUKdu4AUrGi9odPewndE922bx/74FU3RXXoWhtQf7biRtAinm7NjD12\nPph4hjoK6uO6dAMDIZ3RsGY=\n-----END PRIVATE KEY-----\n",
+            "client_email": "firebase-adminsdk-fbsvc@restaurant-data-backend.iam.gserviceaccount.com",
+            "client_id": "115855681795792637429",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40restaurant-data-backend.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+        }
+        cred = credentials.Certificate(firebase_config)
         
         # Initialize Firebase only if not already initialized
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
         return firestore.client()
     except ValueError as e:
-        st.error(f"Failed to initialize Firebase: {str(e)}. Please check the service account JSON file or environment variables.")
+        st.error(f"Failed to initialize Firebase: {str(e)}. Please check the embedded service account credentials.")
         return None
     except Exception as e:
         st.error(f"An unexpected error occurred while initializing Firebase: {str(e)}")
